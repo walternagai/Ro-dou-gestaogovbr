@@ -191,6 +191,47 @@ o banco `clipping` e recrie os serviços do Airflow. O usuário do banco do
 Airflow já tem permissão de escrita; `clipping_rw` é a alternativa de menor
 privilégio.
 
+### API do clipping (fase F4)
+
+Opcional, sob o profile `clipping` do Compose. Depende do schema do clipping já
+aplicado e de um token da API do Airflow para o disparo sob demanda.
+
+```bash
+# 1. crie uma chave para o consumidor (o valor aparece uma única vez)
+docker compose \
+  --env-file deploy/prod/.env.production \
+  -f docker-compose.yml \
+  -f deploy/prod/docker-compose.override.yml \
+  exec -T clipping-api python scripts/create_key.py \
+    --label "agente-ia" --scope clipping:read --scope clipping:trigger
+
+# 2. defina AIRFLOW_API_TOKEN e, se quiser, CLIPPING_DAG_ID no .env.production
+# 3. suba o serviço (junto com o Traefik em uso)
+docker compose \
+  --env-file deploy/prod/.env.production \
+  -f docker-compose.yml \
+  -f deploy/prod/docker-compose.override.yml \
+  -f deploy/prod/docker-compose.traefik-host.yml \
+  --profile clipping up -d clipping-api
+
+curl "https://SEU_HOST/clipping/healthz"
+```
+
+A API escuta em `/clipping` (router Traefik com prioridade maior que o do
+Airflow) e usa:
+
+- `CLIPPING_DB_URL` — conexão com o banco `clipping`; por padrão o Compose usa
+  o usuário do banco do Airflow. Para a role de menor privilégio, defina
+  `CLIPPING_DB_URL` no `.env.production` com a conexão de `clipping_ro`
+  (leitura dos dados e `INSERT` apenas em `clipping.api_request`, para a
+  auditoria);
+- `AIRFLOW_API_TOKEN` — token com permissão de disparar DAGs;
+- `CLIPPING_DAG_ID` — DAG disparada por `POST /clipping/v1/runs` (default
+  `rodou_clipping`).
+
+A referência dos endpoints está em
+[API do clipping](../../docs/docs/como_utilizar/api.md).
+
 ## 7. Backup e atualização
 
 Backup lógico do banco do Airflow:

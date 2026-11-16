@@ -13,3 +13,17 @@ services:
       traefik.http.services.ro-dou.loadbalancer.server.scheme: "http"
       traefik.http.services.ro-dou.loadbalancer.healthcheck.path: "/api/v2/monitor/health"
       traefik.http.services.ro-dou.loadbalancer.healthcheck.interval: "30s"
+
+  clipping-api:
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "ro-dou_default"
+      traefik.http.routers.clipping.rule: "Host(`${RO_DOU_HOST:?Defina RO_DOU_HOST no .env.production}`) && PathPrefix(`/clipping`)"
+      traefik.http.routers.clipping.priority: "100"
+      traefik.http.routers.clipping.entrypoints: "websecure"
+      traefik.http.routers.clipping.tls: "true"
+      traefik.http.routers.clipping.tls.certresolver: "letsencrypt"
+      traefik.http.routers.clipping.service: "clipping"
+      traefik.http.services.clipping.loadbalancer.server.port: "8000"
+      traefik.http.services.clipping.loadbalancer.healthcheck.path: "/clipping/healthz"
+      traefik.http.services.clipping.loadbalancer.healthcheck.interval: "30s"

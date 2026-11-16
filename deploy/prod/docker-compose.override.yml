@@ -131,6 +131,19 @@ services:
     mem_limit: 256m
     logging: *default-logging
 
+  clipping-api:
+    environment:
+      CLIPPING_DB_URL: "${CLIPPING_DB_URL:-postgresql://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:?Defina AIRFLOW_DB_PASSWORD no .env.production}@postgres:5432/clipping}"
+      AIRFLOW_API_URL: "http://airflow-api-server:8080"
+      AIRFLOW_API_TOKEN: "${AIRFLOW_API_TOKEN:-}"
+      CLIPPING_DAG_ID: "${CLIPPING_DAG_ID:-rodou_clipping}"
+    ports: !override []
+    networks:
+      - default
+      - backend
+    mem_limit: ${CLIPPING_API_MEM_LIMIT:-512m}
+    logging: *default-logging
+
 networks:
   backend:
     internal: true

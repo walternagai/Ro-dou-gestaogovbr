@@ -26,6 +26,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA clipping TO clippin
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA clipping TO clipping_rw;
 
 GRANT SELECT ON ALL TABLES IN SCHEMA clipping TO clipping_ro;
+-- A API usa `clipping_ro` para leitura e grava apenas a auditoria.
+GRANT INSERT ON clipping.api_request TO clipping_ro;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA clipping
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO clipping_rw;
