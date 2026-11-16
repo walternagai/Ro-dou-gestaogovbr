@@ -167,6 +167,13 @@ Objetivo: coletar Executivo e Municípios de MG com TLS válido e sem PDF.
 **Aceite do épico:** `sources: [DOE:MG]` coleta Executivo e Municípios; dia sem
 publicação resulta `empty` sem erro; falha de TLS é explícita e monitorada.
 
+**Status:** concluído em 16/11/2026 (C1–C7). Evidências:
+`src/hooks/doemg_hook.py` (autenticação anônima, paginação, retry, rate limit,
+cache e bundle TLS), `MGSearcher` em `src/searchers.py`, registro em
+`src/dou_dag_generator.py`, exemplo
+`dag_confs/examples_and_tests/doemg_example.yaml`, testes em
+`tests/test_doemg_hook.py` e documentação em `parametros.md`/`exemplos.md`.
+
 **Riscos específicos:** API não documentada (teste de contrato com fixture);
 cadeia TLS pode mudar (monitorar validade).
 

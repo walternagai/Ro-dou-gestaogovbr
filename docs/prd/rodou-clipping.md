@@ -51,7 +51,7 @@ contrato estável, cacheável e com erros acionáveis.
 | QD indisponível | `GET https://api.queridodiario.org.br/gazettes` → **503 "no available server"** (global) |
 | INLABS indisponível | `inlabs.in.gov.br` em **manutenção programada**; `logar.php`/`index.php` → 404 |
 | DOE-SP funcional | `do-api-web-search.doe.sp.gov.br/v2/advanced-search/publications` |
-| DOE-MG funcional com ressalvas | API `jornalminasgerais.mg.gov.br/api/v1/`; cadeia TLS incompleta (ver §11.3) |
+| DOE-MG funcional com ressalvas | API `jornalminasgerais.mg.gov.br/api/v1/` (token anônimo); cadeia TLS incompleta (ver §11.3) |
 
 ### 2.2 Dores do usuário
 
