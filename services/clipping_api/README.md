@@ -33,6 +33,13 @@ curl http://localhost:8081/clipping/healthz
 
 O serviço também está no `docker-compose.yml` sob o profile `clipping`.
 
+## Publicação da imagem
+
+```bash
+docker build -t ghcr.io/gestaogovbr/ro-dou-clipping-api:<tag> services/clipping_api
+docker push ghcr.io/gestaogovbr/ro-dou-clipping-api:<tag>
+```
+
 ## Chaves de API
 
 ```bash

@@ -146,6 +146,29 @@ Erros usam `application/problem+json`:
 | 429 | limite de requisições |
 | 503 | banco ou Airflow indisponível |
 
+## Observabilidade
+
+- `GET /clipping/metrics` (sem autenticação) expõe métricas em formato
+  Prometheus: `clipping_api_requests_total{route,status}`,
+  `clipping_api_request_duration_ms_sum`, `clipping_api_throttled_total`,
+  `clipping_api_triggers_total` e
+  `clipping_api_source_status{source,status}` (último status de cada fonte).
+- Os logs da API são JSON e não incluem payload nem query string.
+- Alertas sugeridos:
+  - `clipping_api_source_status{status="failed"} == 1` por 2 dias;
+  - taxa de respostas 5xx acima do habitual;
+  - volume de `429` acima do esperado para a chave.
+
+Smoke test somente leitura:
+
+```bash
+CLIPPING_API_URL=https://rodou.ninja-apps.work \
+CLIPPING_API_KEY=<chave> \
+  python services/clipping_api/scripts/smoke_test.py
+```
+
+O checklist completo de produção está em `deploy/prod/CHECKLIST.md`.
+
 ## Operação
 
 A API é opcional e sobe sob o profile `clipping` do Compose:

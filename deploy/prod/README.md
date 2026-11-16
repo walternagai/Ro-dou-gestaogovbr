@@ -230,7 +230,9 @@ Airflow) e usa:
   `rodou_clipping`).
 
 A referência dos endpoints está em
-[API do clipping](../../docs/docs/como_utilizar/api.md).
+[API do clipping](../../docs/docs/como_utilizar/api.md). O
+[checklist de produção](CHECKLIST.md) cobre pré-requisitos, roteamento,
+autenticação, observabilidade, backup e rollback.
 
 ## 7. Backup e atualização
 

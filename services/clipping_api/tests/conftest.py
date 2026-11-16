@@ -11,6 +11,7 @@ os.environ.setdefault("AIRFLOW_API_TOKEN", "test-token")
 
 from app import main as api_main
 from app.auth import hash_key, rate_limiter
+from app.metrics import metrics
 
 from .fake_db import FakeDB, make_item, make_run
 
@@ -79,6 +80,7 @@ def api():
     api_main.app.state.db = database
     api_main._IDEMPOTENCY.clear()
     rate_limiter.reset()
+    metrics.reset()
 
     with TestClient(api_main.app) as client:
         yield client, database

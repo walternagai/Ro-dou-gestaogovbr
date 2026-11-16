@@ -9,3 +9,12 @@ Acesse o serviço:
 {{- else if eq .Values.airflow.apiServer.service.type "NodePort" }}
    kubectl -n {{ .Release.Namespace }} get svc {{ include "ro-dou.fullname" . }}-airflow-api-server
 {{- end }}
+{{- if .Values.clippingApi.enabled }}
+
+API do clipping:
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ro-dou.fullname" . }}-clipping-api 8000:{{ .Values.clippingApi.port }}
+   Depois acesse http://localhost:8000/clipping/healthz
+   Crie uma chave:
+   kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "ro-dou.fullname" . }}-clipping-api -- \
+     python scripts/create_key.py --label "agente-ia" --scope clipping:read --scope clipping:trigger
+{{- end }}

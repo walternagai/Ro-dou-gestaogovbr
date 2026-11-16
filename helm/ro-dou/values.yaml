@@ -70,6 +70,46 @@ airflow:
     storage: 1Gi
     storageClassName: ""
 
+
+# Rodou Clipping API (optional)
+# Requer o schema em `clipping/sql/init-db.sql` aplicado no PostgreSQL do release.
+clippingApi:
+  enabled: false
+  image:
+    repository: ghcr.io/gestaogovbr/ro-dou-clipping-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 8000
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: clipping.local
+        paths:
+          - path: /clipping
+            pathType: Prefix
+    tls: []
+  # Default: http://<release>-airflow-api-server:<airflow.apiServer.port>
+  airflowApiUrl: ""
+  env:
+    CLIPPING_DAG_ID: "rodou_clipping"
+    CLIPPING_READ_LIMIT_PER_MINUTE: "120"
+    CLIPPING_TRIGGER_LIMIT_PER_HOUR: "10"
+  secrets:
+    # Deixe vazio para montar a conexão a partir das credenciais do postgres.
+    CLIPPING_DB_URL: ""
+    # Necessário para POST /runs; sem ele o endpoint responde 503.
+    AIRFLOW_API_TOKEN: ""
+  resources: {}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 # Synchronize DAG configuration files from Git (optional)
 gitRsync:
   enabled: false

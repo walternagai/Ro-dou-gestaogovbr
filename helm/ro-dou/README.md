@@ -330,6 +330,7 @@ gitRsync:
 ## Serviços
 
 - **Servidor de API do Airflow:** porta 8080, incluindo a interface web e a API
+- **API do clipping (opcional):** porta 8000, quando `clippingApi.enabled=true`
 - **PostgreSQL:** porta 5432
 - **SMTP4dev:** interface web na porta 5001, SMTP na porta 25 e IMAP na porta 143
 - **OpenSearch opcional:** API HTTP na porta 9200
@@ -348,6 +349,45 @@ Para acessar a interface do SMTP4dev:
 ```bash
 kubectl port-forward service/rodou-ro-dou-smtp4dev 5001:5001
 ```
+
+## API do clipping (opcional)
+
+O chart pode implantar a API do Rodou Clipping, que expõe os dados persistidos
+em `/clipping/v1` e permite disparar a DAG sob demanda.
+
+Pré-requisito: o schema do clipping aplicado no PostgreSQL do release. O chart
+não monta `clipping/sql` no banco; envie os arquivos a partir do repositório:
+
+```bash
+kubectl -n <namespace> exec -i deploy/rodou-ro-dou-postgres -- \
+  psql -U postgres -d postgres < clipping/sql/00-create-database.sql
+kubectl -n <namespace> exec -i deploy/rodou-ro-dou-postgres -- \
+  psql -U postgres -d clipping < clipping/sql/01-schema.sql
+kubectl -n <namespace> exec -i deploy/rodou-ro-dou-postgres -- \
+  psql -U postgres -d clipping < clipping/sql/02-roles.sql
+```
+
+Valores principais:
+
+| Valor | Default | Descrição |
+|---|---|---|
+| `clippingApi.enabled` | `false` | implanta Deployment, Service e Secret da API |
+| `clippingApi.image.repository` | `ghcr.io/gestaogovbr/ro-dou-clipping-api` | imagem do serviço |
+| `clippingApi.port` | `8000` | porta HTTP |
+| `clippingApi.secrets.CLIPPING_DB_URL` | vazio | vazio usa as credenciais do PostgreSQL do chart |
+| `clippingApi.secrets.AIRFLOW_API_TOKEN` | vazio | necessário para `POST /runs` |
+| `clippingApi.airflowApiUrl` | release + `-airflow-api-server` | URL da API do Airflow |
+| `clippingApi.ingress.enabled` | `false` | publica `/clipping` via Ingress |
+
+Crie uma chave de API:
+
+```bash
+kubectl -n <namespace> exec deploy/rodou-ro-dou-clipping-api -- \
+  python scripts/create_key.py --label "agente-ia" \
+  --scope clipping:read --scope clipping:trigger
+```
+
+A referência dos endpoints está em `docs/docs/como_utilizar/api.md`.
 
 ## Persistência
 

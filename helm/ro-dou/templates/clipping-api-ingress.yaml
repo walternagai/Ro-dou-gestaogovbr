@@ -1,0 +1,36 @@
+{{- if and .Values.clippingApi.enabled .Values.clippingApi.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "ro-dou.fullname" . }}-clipping-api
+  labels:
+    {{- include "ro-dou.labels" . | nindent 4 }}
+    app: clipping-api
+  {{- with .Values.clippingApi.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.clippingApi.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.clippingApi.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.clippingApi.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path | quote }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "ro-dou.fullname" $ }}-clipping-api
+                port:
+                  number: {{ $.Values.clippingApi.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

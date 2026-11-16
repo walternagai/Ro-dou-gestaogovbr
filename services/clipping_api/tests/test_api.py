@@ -210,3 +210,29 @@ def test_audit_is_recorded(api):
     assert database.audits
     assert database.audits[0]["key_id"] == "key-read"
     assert database.audits[0]["route"] == "/clipping/v1/items"
+
+
+def test_metrics_endpoint(api):
+    client, _ = api
+    params = {"date": "2026-11-14"}
+
+    first = client.get("/clipping/v1/items", params=params, headers=_headers())
+    client.get(
+        "/clipping/v1/items",
+        params=params,
+        headers={**_headers(), "If-None-Match": first.headers["etag"]},
+    )
+
+    response = client.get("/clipping/metrics")
+
+    assert response.status_code == 200
+    body = response.text
+    assert (
+        'clipping_api_requests_total{route="/clipping/v1/items",status="200"} 1'
+        in body
+    )
+    assert (
+        'clipping_api_requests_total{route="/clipping/v1/items",status="304"} 1'
+        in body
+    )
+    assert 'clipping_api_source_status{source="QD",status="failed"} 1' in body

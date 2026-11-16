@@ -5,7 +5,6 @@ A autenticação é por ``X-API-Key`` (ou ``Authorization: Bearer``), com escopo
 ``clipping:read`` e ``clipping:trigger``.
 """
 
-import logging
 import threading
 import time
 from datetime import UTC, date, datetime
@@ -13,7 +12,7 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -23,10 +22,10 @@ from .auth import READ_SCOPE, TRIGGER_SCOPE, require_scope
 from .catalog import SOURCE_NAMES, SOURCES, validate_sources
 from .db import Database
 from .http_utils import json_response
+from .logging_config import logger
+from .metrics import metrics
 from .problems import ApiProblem
 from .settings import get_settings
-
-logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Rodou Clipping API",
@@ -178,6 +177,22 @@ async def audit_requests(request: Request, call_next):
         response.headers["X-RateLimit-Reset"] = str(rate["reset"])
 
     key_id = getattr(request.state, "key_id", None)
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    route = _normalize_route(request.url.path)
+
+    if route.startswith("/clipping"):
+        metrics.record(route, response.status_code, latency_ms)
+        logger.info(
+            "request",
+            extra={
+                "event": "request",
+                "route": route,
+                "status": response.status_code,
+                "latency_ms": latency_ms,
+                "key_id": key_id,
+            },
+        )
+
     if key_id and request.url.path.startswith("/clipping/v1"):
         try:
             await run_in_threadpool(
@@ -185,10 +200,10 @@ async def audit_requests(request: Request, call_next):
                 key_id=key_id,
                 route=request.url.path,
                 status=response.status_code,
-                latency_ms=int((time.perf_counter() - started) * 1000),
+                latency_ms=latency_ms,
                 request_id=request.headers.get("X-Request-ID"),
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - auditoria não pode derrubar a resposta
             logger.exception("Falha ao registrar auditoria da API")
 
     return response
@@ -261,6 +276,16 @@ def _resolve_reference(
     return date_from, date_to
 
 
+def _normalize_route(path: str) -> str:
+    for prefix, normalized in (
+        ("/clipping/v1/items/", "/clipping/v1/items/{id}"),
+        ("/clipping/v1/runs/", "/clipping/v1/runs/{id}"),
+    ):
+        if path.startswith(prefix) and path != prefix:
+            return normalized
+    return path
+
+
 def _paginate(page: int, size: int) -> tuple[int, int]:
     if page < 1:
         raise ApiProblem(400, "Parâmetro inválido", detail="page deve ser >= 1.")
@@ -279,6 +304,18 @@ def health(request: Request):
     if request.app.state.db.health():
         return {"status": "ok"}
     raise ApiProblem(503, "Banco indisponível")
+
+
+@app.get("/clipping/metrics", include_in_schema=False)
+def metrics_endpoint(request: Request):
+    try:
+        statuses = request.app.state.db.source_statuses()
+    except Exception:  # noqa: BLE001 - métricas não devem falhar por banco
+        statuses = {}
+    return PlainTextResponse(
+        metrics.render(statuses),
+        media_type="text/plain; version=0.0.4",
+    )
 
 
 @app.get(
@@ -468,6 +505,8 @@ def trigger_run(request: Request, body: TriggerRequest):
                 dag_run_id,
                 now + _IDEMPOTENCY_TTL_SECONDS,
             )
+
+    metrics.record_trigger()
 
     return JSONResponse(
         status_code=202,
