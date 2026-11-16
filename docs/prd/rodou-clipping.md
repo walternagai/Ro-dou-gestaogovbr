@@ -220,7 +220,7 @@ contrato estável, cacheável e com erros acionáveis.
 |---|---|
 | RNF1 | Compatibilidade Linux/macOS/Windows no código; sem `shell=True`, sem caminhos montados com separador manual |
 | RNF2 | Nenhum segredo em log, resposta da API, YAML versionado ou imagem |
-| RNF3 | API somente leitura sobre o banco; usuário `clipping_ro` com `SELECT` |
+| RNF3 | API lê o banco com `clipping_ro`, que tem `SELECT` e `INSERT` apenas em `clipping.api_request` (auditoria) |
 | RNF4 | Tempo máximo de execução diária: 30 min para DOU + SP + MG |
 | RNF5 | Armazenamento estimado: < 500 MB/mês com `abstract` (sem texto completo) |
 | RNF6 | Consultas da API não podem varrer tabela inteira (índices obrigatórios) |
@@ -293,8 +293,9 @@ Na fase 2, um serviço `clipping-mcp` envolve a API pelo mesmo host
     caminho); sem prioridade explícita a regra mais longa vence, mas não se
     depende disso;
   - mesmo entrypoint `websecure` e mesmo `certresolver` do Airflow;
-  - **sem** `stripPrefix`: o serviço recebe `/clipping/v1/...` e o FastAPI é
-    montado com `root_path="/clipping"` e router `prefix="/v1"`;
+  - **sem** `stripPrefix`: o serviço recebe `/clipping/v1/...` e o FastAPI
+    declara as rotas já com o prefixo `/clipping` (equivale a `root_path`, sem
+    depender de o proxy remover o prefixo);
   - healthcheck do serviço em `/clipping/healthz` (fora da versão).
 - **Isolamento na mesma origem:**
   - a API **não** define cookies de sessão e não compartilha domínio de cookie
@@ -455,6 +456,11 @@ Retorna o item ou `404` em `application/problem+json`.
 Resposta `202 Accepted` com `run_id` e `dag_run_id`; `409` se já houver run
 `running` para a mesma data. Aceita `Idempotency-Key`: repetição com a mesma
 chave devolve o mesmo `run_id` sem novo disparo.
+
+O disparo usa a API REST do Airflow (`/api/v2/dags/{dag}/dagRuns`) com
+`logical_date` ao meio-dia de Brasília e `conf` contendo `reference_date` e
+`sources`. O cache de `Idempotency-Key` é mantido **em memória, por instância**
+(24 h); em múltiplas réplicas, a garantia exige armazenamento compartilhado.
 
 ### 10.5 `GET /sources`
 
@@ -649,8 +655,8 @@ dag:
 ### 12.2 Banco
 
 - Usuário de escrita: `clipping_rw` (usado pelo Airflow).
-- Usuário de leitura: `clipping_ro` (usado pela API), `SELECT` apenas em
-  `clipping.*`.
+- Usuário da API: `clipping_ro`, com `SELECT` em `clipping.*` e `INSERT`
+  apenas em `clipping.api_request` (auditoria).
 - `pg_dump` diário do banco `clipping` junto ao backup do Airflow.
 - Retenção padrão 24 meses; expurgo por job mensal com `DELETE` em lote e
   `VACUUM`.

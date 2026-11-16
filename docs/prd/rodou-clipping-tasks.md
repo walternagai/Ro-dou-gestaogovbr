@@ -231,6 +231,14 @@ para o agente de IA.
 **Aceite do épico:** contrato do PRD §10 validado; o agente consegue listar
 itens, consultar run e disparar execução com a própria chave.
 
+**Status:** concluído em 16/11/2026 (E1–E12). Evidências:
+`services/clipping_api/` (FastAPI, auth/escopos, rate limit, ETag/304,
+auditoria, OpenAPI, Dockerfile e script de chave), endpoints do §10, testes em
+`services/clipping_api/tests/`, serviço no Compose sob o profile `clipping`,
+rotas Traefik com prioridade e documentação em `como_utilizar/api.md`.
+Validação real: imagem construída, health/auth/items/ETag/sources/runs/409/503
+exercitados contra PostgreSQL.
+
 **Notas do épico:**
 
 - E5 depende de token do Airflow (`AIRFLOW_API_TOKEN`) configurado como secret;
