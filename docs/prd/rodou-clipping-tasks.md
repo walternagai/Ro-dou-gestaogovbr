@@ -198,6 +198,14 @@ Objetivo: um contrato único para DOE estaduais, com SP migrado sem regressão.
 **Aceite do épico:** `DOESP` continua funcionando; `DOE:SP` é o nome canônico;
 adicionar uma UF futura não exige tocar no gerador.
 
+**Status:** concluído em 16/11/2026 (D1–D4). Evidências:
+`src/state_adapters.py` (protocolo e registry), `DOESPAdapter`/`DOEMGAdapter`
+usados por `DOESPSearcher`/`MGSearcher`, `_SEARCHER_BY_SOURCE` derivado de
+`STATE_SOURCE_SEARCHERS`, teste de paridade `DOESP`/`DOE:SP` em
+`tests/sources_resilience_test.py`, testes do contrato em
+`tests/state_adapters_test.py` e guia em
+`docs/docs/como_contribuir/novas_fontes.md`.
+
 ---
 
 ## 7. Épico E — API Rodou Clipping v1 (F4) · 46 h

@@ -560,11 +560,17 @@ class StateGazetteAdapter(Protocol):
     cadernos: dict[str, str]
     rate_limit_rps: float
 
-    def search(self, terms: list[str], date_from: date, date_to: date,
-               cadernos: list[str]) -> list[RawItem]: ...
-    def normalize(self, raw: RawItem) -> ClippingItem: ...
-    def fetch_by_date(self, day: date) -> list[RawItem]: ...  # backfill
+    def search(self, terms, reference_date, search_date,
+               cadernos=None) -> dict[str, list[dict]]: ...
+    def normalize(self, raw, term) -> dict: ...
+    def fetch_by_date(self, day) -> list[dict]: ...  # backfill
 ```
+
+`reference_date` e `search_date` seguem os presets do Ro-DOU
+(`DIA`/`SEMANA`/`MES`/`ANO`); `search` devolve os itens agrupados por termo.
+`fetch_by_date` pode levantar `NotImplementedError` quando a API não permitir
+listar por data sem termos. O registry fica em `src/state_adapters.py`
+(`STATE_ADAPTERS` e `STATE_SOURCE_SEARCHERS`).
 
 `RawItem`/`ClippingItem` usam o dicionário canônico já consumido por
 `_group_results` (`title`, `abstract`, `href`, `section`, `arttype`, `pubdate`…),
