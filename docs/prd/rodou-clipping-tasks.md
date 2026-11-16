@@ -268,6 +268,15 @@ definido (`clipping:read` + `clipping:trigger`).
 | G2 | Job de expurgo por retenção (padrão 24 meses) | B4 | 3 h | Expurgo não afeta itens fora da janela |
 | G3 | Testes e documentação de backfill/retenção | G1, G2 | 4 h | Testes verdes; runbook atualizado |
 
+**Status (F):** concluído em 16/11/2026 (F1–F5). Evidências: routers
+`/clipping` com prioridade 100 nos dois modos de Traefik, serviço no Compose de
+produção com secrets e limites, chart Helm (Deployment/Service/Ingress/Secret)
+validado por `helm lint` e `helm template`, métricas Prometheus e logs JSON sem
+payload, smoke test em `services/clipping_api/scripts/smoke_test.py` e checklist
+em `deploy/prod/CHECKLIST.md`.
+
+**Status (G):** pendente — backfill e expurgo por retenção.
+
 ---
 
 ## 9. Épico H — Servidor MCP (F7, fase 2) · 25 h

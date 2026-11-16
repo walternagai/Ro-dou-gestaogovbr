@@ -701,6 +701,7 @@ dag:
 | Sinal | Implementação |
 |---|---|
 | Healthcheck da API | `GET /clipping/healthz` (processo + conexão de leitura) |
+| Métricas Prometheus | `GET /clipping/metrics` com requisições por rota/status, latência, 429, disparos e status por fonte |
 | Métrica de itens | contador por fonte/run em log estruturado |
 | Falha de fonte | log `WARNING` + `source_run.status=failed` + alerta se 2 dias consecutivos |
 | Duração | `clipping.run.finished_at - started_at` |
