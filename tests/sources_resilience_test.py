@@ -189,6 +189,23 @@ def test_doe_sp_alias_uses_sp_searcher(generator, mocker):
     assert item["source"] == "DOE:SP"
 
 
+def test_doesp_and_doe_sp_produce_same_result(generator, mocker):
+    sp_searcher = mocker.Mock()
+    sp_searcher.exec_search.side_effect = lambda **kwargs: _search_result()
+    generator.searchers["DOESP"] = sp_searcher
+
+    legacy = generator.perform_searches(
+        **_search_kwargs(sources=["DOESP"]), **_context()
+    )
+    canonical = generator.perform_searches(
+        **_search_kwargs(sources=["DOE:SP"]), **_context()
+    )
+
+    assert legacy["result"] == canonical["result"]
+    assert set(legacy["sources_status"]) == {"DOE:SP"}
+    assert legacy["sources_status"] == canonical["sources_status"]
+
+
 def test_legacy_doesp_is_canonicalized(generator, mocker):
     sp_searcher = mocker.Mock()
     sp_searcher.exec_search.return_value = _search_result()

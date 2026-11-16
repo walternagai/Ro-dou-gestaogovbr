@@ -25,8 +25,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from hooks.dou_hook import DOUHook
 from hooks.inlabs_hook import INLABSHook
-from hooks.doesp_hook import DOESPHook
-from hooks.doemg_hook import DOEMGHook
+from state_adapters import DOEMGAdapter, DOESPAdapter
 from utils.search_domains import (
     Field,
     SearchDate,
@@ -830,12 +829,13 @@ class INLABSSearcher(BaseSearcher):
 class DOESPSearcher(BaseSearcher):
     """Searcher for Diário Oficial do Estado de São Paulo (DOESP).
 
-    Uses DOESPHook to perform searches. The `dou_sections` parameter expected by
-    existing YAML/DAGs may contain journal NAMES (e.g. "Executivo"). These are
-    mapped to journal IDs via SectionDOESP.fetch_sections().
+    Usa ``DOESPAdapter`` (contrato ``StateGazetteAdapter``) sobre o
+    ``DOESPHook``. O `dou_sections` esperado por YAMLs/DAGs existentes pode
+    conter NOMES de caderno (ex.: "Executivo"); eles são mapeados para IDs via
+    ``SectionDOESP.fetch_sections()``.
     """
 
-    doesp_hook = DOESPHook()
+    adapter = DOESPAdapter()
 
     def exec_search(
         self,
@@ -865,18 +865,21 @@ class DOESPSearcher(BaseSearcher):
                     journal_names.append(journal_map.get(s, s))
 
         logging.info("DOESP: starting search for term: %s", ", ".join(term_list))
-        results = []
         try:
-            results = self.doesp_hook.search_text(
-                search_term=term_list,
-                journals=journal_names,
-                reference_date=reference_date,
-                search_date=SearchDate[search_date],
+            results_by_term = self.adapter.search(
+                term_list,
+                reference_date,
+                SearchDate[search_date],
+                journal_names,
             )
         except Exception as e:
             logging.error("DOESP search error for '%s': %s", ", ".join(term_list), e)
+            results_by_term = {}
 
-        if results:
+        for search_key, results in results_by_term.items():
+            if not results:
+                continue
+
             # Apply same post-filters as DOUSearcher
             if ignore_signature_match:
                 results = [r for r in results if not self._is_signature(", ".join(term_list), r.get("abstract"))]
@@ -892,7 +895,6 @@ class DOESPSearcher(BaseSearcher):
             for r in results:
                 if not r.get("section"):
                     r["section"] = "DOESP"
-            search_key = "all_publications" if ", ".join(term_list) == "" else ", ".join(term_list)
             search_results[search_key] = results
 
         time.sleep(self.SCRAPPING_INTERVAL * random() * 2)
@@ -910,7 +912,7 @@ class MGSearcher(BaseSearcher):
     API e são ignorados com aviso.
     """
 
-    mg_hook = DOEMGHook()
+    adapter = DOEMGAdapter()
 
     def exec_search(
         self,
@@ -935,11 +937,11 @@ class MGSearcher(BaseSearcher):
                 "DOE-MG: pubtype não é suportado pela API e será ignorado."
             )
 
-        results_by_term = self.mg_hook.search(
+        results_by_term = self.adapter.search(
             term_list,
             reference_date,
-            search_date=SearchDate[search_date],
-            cadernos=journals,
+            SearchDate[search_date],
+            journals,
         )
 
         search_results = {}

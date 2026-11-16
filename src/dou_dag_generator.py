@@ -48,6 +48,7 @@ from searchers import (
     DOESPSearcher,
     MGSearcher,
 )
+from state_adapters import STATE_SOURCE_SEARCHERS
 
 SearchResult = Dict[str, Dict[str, Dict[str, List[dict]]]]
 
@@ -57,8 +58,7 @@ _SEARCHER_BY_SOURCE = {
     "DOU": "DOU",
     "INLABS": "INLABS",
     "QD": "QD",
-    "DOE:SP": "DOESP",
-    "DOE:MG": "MG",
+    **STATE_SOURCE_SEARCHERS,
 }
 
 # Ordem de merge mantida do comportamento anterior: o resultado do QD entra

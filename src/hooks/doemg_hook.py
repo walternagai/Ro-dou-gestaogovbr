@@ -50,6 +50,7 @@ class DOEMGHook(BaseHook):
     BASE_URL = "https://www.jornalminasgerais.mg.gov.br/api/v1/"
     AUTH_URL = BASE_URL + "Autenticacao/Autenticar"
     SEARCH_URL = BASE_URL + "Pesquisa/PesquisarJornaisPaginados"
+    EDITION_URL = BASE_URL + "Jornal/ObterEdicaoPorDataPublicacao"
     PORTAL_URL = "https://www.jornalminasgerais.mg.gov.br/edicao-do-dia"
 
     REQUEST_TIMEOUT = (10, 30)  # (conexão, leitura)
@@ -233,6 +234,13 @@ class DOEMGHook(BaseHook):
         }
         self._cache[cache_key] = results
         return results
+
+    def fetch_edition(self, day) -> dict:
+        """Metadados da edição publicada em ``day`` (sem decodificar o PDF)."""
+        response = self._request(
+            "GET", self.EDITION_URL, params={"dataPublicacao": day.isoformat()}
+        )
+        return response.json().get("dados") or {}
 
     def _search_term(self, term, start_date, reference_date, flags) -> list:
         params = {

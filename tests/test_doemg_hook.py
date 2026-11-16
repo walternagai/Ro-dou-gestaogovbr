@@ -210,8 +210,8 @@ def test_normalize_builds_ro_dou_item(hook):
 def test_mg_searcher_groups_and_filters_terms_ignore(mocker):
     mocker.patch("dags.ro_dou_src.searchers.time.sleep")
     searcher = MGSearcher()
-    searcher.mg_hook = mocker.Mock()
-    searcher.mg_hook.search.return_value = {
+    searcher.adapter = mocker.Mock()
+    searcher.adapter.search.return_value = {
         "licitacao": [
             {"title": "Executivo - página 1", "abstract": "licitacao", "hierarchyList": []},
             {"title": "Executivo - página 2", "abstract": "conteúdo a ignorar", "hierarchyList": []},
@@ -237,8 +237,8 @@ def test_mg_searcher_groups_and_filters_terms_ignore(mocker):
 def test_mg_searcher_ignores_department_with_warning(mocker, caplog):
     mocker.patch("dags.ro_dou_src.searchers.time.sleep")
     searcher = MGSearcher()
-    searcher.mg_hook = mocker.Mock()
-    searcher.mg_hook.search.return_value = {
+    searcher.adapter = mocker.Mock()
+    searcher.adapter.search.return_value = {
         "x": [{"title": "t", "abstract": "a", "hierarchyList": []}]
     }
 
@@ -257,3 +257,34 @@ def test_mg_searcher_ignores_department_with_warning(mocker, caplog):
     items = result["single_group"]["x"]["single_department"]
     assert len(items) == 1
     assert "department" in caplog.text
+
+
+def test_fetch_edition_requests_publication_date(hook, mocker):
+    calls = []
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        if url.endswith("Autenticacao/Autenticar"):
+            return _response({"dados": "token", "erros": []})
+        return _response(
+            {
+                "dados": {
+                    "dataPublicacao": "2026-11-14T00:00:00",
+                    "cadernos": [{"id": 1, "descricao": "Diário do Executivo"}],
+                },
+                "erros": [],
+            }
+        )
+
+    mocker.patch(
+        "dags.ro_dou_src.hooks.doemg_hook.requests.request",
+        side_effect=fake_request,
+    )
+
+    edition = hook.fetch_edition(REFERENCE_DATE)
+
+    assert edition["cadernos"][0]["descricao"] == "Diário do Executivo"
+    method, url, kwargs = calls[-1]
+    assert method == "GET"
+    assert url.endswith("Jornal/ObterEdicaoPorDataPublicacao")
+    assert kwargs["params"] == {"dataPublicacao": "2026-11-14"}

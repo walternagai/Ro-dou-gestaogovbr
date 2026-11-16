@@ -51,6 +51,8 @@ Quando a fonte de um Diário Oficial estadual for utilizada (`DOE:SP`, `DOE:MG` 
   - Valores inválidos ou lista vazia são rejeitados na validação do YAML, com a lista de valores aceitos na mensagem de erro.
   - `DOE:MG` usa a API pública do Jornal Minas Gerais. Filtros de `department`/`department_ignore` e `pubtype` não são suportados por essa API: eles são ignorados com um aviso no log, e não silenciosamente aplicados.
 
+  Para adicionar uma nova UF, veja [Novas fontes estaduais](../como_contribuir/novas_fontes.md).
+
   Quando uma fonte falha (indisponibilidade, erro de rede, TLS), as demais continuam sendo executadas e o resultado é entregue com o que foi coletado. O status de cada fonte (`ok`, `empty` ou `failed`, com a mensagem de erro) fica registrado em `sources_status` no resultado da pesquisa e nos logs, para que a lacuna não passe despercebida. Se **todas** as fontes solicitadas falharem, a execução falha — assim o retry e o alerta de falha continuam funcionando em vez de entregar um clipping vazio como se não houvesse publicação.
 - **terms** *(condicionalmente obrigatório)*: Lista de termos a serem buscados. Para o INLABS podem ser utilizados operadores avançados de busca. Veja nota acima sobre validação: se `QD` estiver na lista de `sources`, os termos são exigidos; caso contrário basta informar pelo menos um dos critérios `terms`, `department` ou `pubtype`.
 - **show_relevancy** *(opcional)*: Exibe a relevância da publicação baseado no score do indexador de buscas. Default: False. (Funcionalidade disponível apenas no INLABS com o OpenSearch)
