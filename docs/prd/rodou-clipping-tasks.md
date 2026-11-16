@@ -139,6 +139,12 @@ Objetivo: todo clipping fica gravado, idempotente e auditável por execução.
 **Aceite do épico:** reprocessar a mesma data não duplica itens; a notificação
 pode falhar sem perder dados; cada item aponta para a run que o inseriu.
 
+**Status:** concluído em 16/11/2026 (B1–B7). Evidências:
+`clipping/sql/` (schema, roles e init idempotente), `src/clipping_persistence.py`,
+task `persist_results` em `src/dou_dag_generator.py`, testes unitários e de
+integração (`tests/clipping_persistence*_test.py`) e documentação em
+`deploy/prod/README.md`.
+
 **Arquivos previstos:** `clipping/sql/*.sql` (novo), `src/dou_dag_generator.py`,
 `deploy/prod/README.md`, `tests/` (novo arquivo de persistência).
 

@@ -319,8 +319,9 @@ Airflow e da base `inlabs`).
 CREATE SCHEMA IF NOT EXISTS clipping;
 
 CREATE TABLE clipping.run (
-    id               text PRIMARY KEY,             -- uuid da execução lógica
-    dag_run_id       text,
+    id               text PRIMARY KEY,             -- '<dag_id>:<airflow_run_id>'
+    dag_id           text NOT NULL,
+    dag_run_id       text,                         -- run_id do Airflow
     reference_date   date NOT NULL,
     status           text NOT NULL CHECK (status IN
                        ('queued','running','success','partial','failed')),
@@ -373,6 +374,8 @@ Regras:
 
 - `id = sha256(f"{source}|{uf or '-'}|{external_id}")`; se a fonte não expuser ID,
   usar `url` canônica como `external_id`.
+- O `id` da run é `<dag_id>:<run_id do Airflow>`, porque o `run_id` do Airflow
+  não é único entre DAGs diferentes agendadas no mesmo horário.
 - `INSERT ... ON CONFLICT (id) DO UPDATE SET updated_at = now(),
   content_hash = EXCLUDED.content_hash, abstract = EXCLUDED.abstract` (upsert).
 - `run_id` da primeira inserção é preservado; reprocessamento não reescreve a
