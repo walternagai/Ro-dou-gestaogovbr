@@ -17,9 +17,11 @@ from dags.ro_dou_src.dou_dag_generator import DouDigestDagGenerator
 from dags.ro_dou_src.schemas import RoDouConfig, canonical_source
 from pydantic import ValidationError
 
-SEARCH_RESULT = {
-    "grupo": {"termo": {"single_department": [{"title": "resultado"}]}}
-}
+
+def _search_result():
+    return {
+        "grupo": {"termo": {"single_department": [{"title": "resultado"}]}}
+    }
 
 
 def _context():
@@ -119,7 +121,7 @@ def test_accepted_sources(sources):
 
 def test_source_failure_is_isolated(generator, mocker):
     generator.searchers["DOU"] = mocker.Mock()
-    generator.searchers["DOU"].exec_search.return_value = SEARCH_RESULT
+    generator.searchers["DOU"].exec_search.return_value = _search_result()
     generator.searchers["QD"] = mocker.Mock()
     generator.searchers["QD"].exec_search.side_effect = RuntimeError("HTTP 503")
 
@@ -127,10 +129,16 @@ def test_source_failure_is_isolated(generator, mocker):
         **_search_kwargs(sources=["DOU", "QD"]), **_context()
     )
 
-    assert output["result"] == SEARCH_RESULT
-    assert output["sources_status"]["DOU"] == {"status": "ok", "error": None}
-    assert output["sources_status"]["QD"]["status"] == "failed"
-    assert "HTTP 503" in output["sources_status"]["QD"]["error"]
+    assert output["result"]["grupo"]["termo"]["single_department"][0]["title"] == "resultado"
+    dou_status = output["sources_status"]["DOU"]
+    assert dou_status["status"] == "ok"
+    assert dou_status["error"] is None
+    assert dou_status["items_count"] == 1
+
+    qd_status = output["sources_status"]["QD"]
+    assert qd_status["status"] == "failed"
+    assert "HTTP 503" in qd_status["error"]
+    assert qd_status["items_count"] == 0
 
 
 def test_all_sources_failing_raises(generator, mocker):
@@ -156,12 +164,15 @@ def test_empty_source_is_reported(generator, mocker):
     output = generator.perform_searches(**_search_kwargs(sources=["DOU"]), **_context())
 
     assert output["result"] == {}
-    assert output["sources_status"]["DOU"] == {"status": "empty", "error": None}
+    status = output["sources_status"]["DOU"]
+    assert status["status"] == "empty"
+    assert status["error"] is None
+    assert status["items_count"] == 0
 
 
 def test_doe_sp_alias_uses_sp_searcher(generator, mocker):
     sp_searcher = mocker.Mock()
-    sp_searcher.exec_search.return_value = SEARCH_RESULT
+    sp_searcher.exec_search.return_value = _search_result()
     generator.searchers["DOESP"] = sp_searcher
 
     output = generator.perform_searches(
@@ -169,13 +180,18 @@ def test_doe_sp_alias_uses_sp_searcher(generator, mocker):
     )
 
     sp_searcher.exec_search.assert_called_once()
-    assert output["sources_status"] == {"DOE:SP": {"status": "ok", "error": None}}
-    assert output["result"] == SEARCH_RESULT
+    status = output["sources_status"]["DOE:SP"]
+    assert status["status"] == "ok"
+    assert status["error"] is None
+    assert output["result"]["grupo"]["termo"]["single_department"][0]["title"] == "resultado"
+
+    item = output["result"]["grupo"]["termo"]["single_department"][0]
+    assert item["source"] == "DOE:SP"
 
 
 def test_legacy_doesp_is_canonicalized(generator, mocker):
     sp_searcher = mocker.Mock()
-    sp_searcher.exec_search.return_value = SEARCH_RESULT
+    sp_searcher.exec_search.return_value = _search_result()
     generator.searchers["DOESP"] = sp_searcher
 
     output = generator.perform_searches(
@@ -188,7 +204,7 @@ def test_legacy_doesp_is_canonicalized(generator, mocker):
 
 def test_unimplemented_source_fails_with_clear_message(generator, mocker):
     generator.searchers["DOU"] = mocker.Mock()
-    generator.searchers["DOU"].exec_search.return_value = SEARCH_RESULT
+    generator.searchers["DOU"].exec_search.return_value = _search_result()
 
     with pytest.raises(ValueError) as excinfo:
         generator.perform_searches(

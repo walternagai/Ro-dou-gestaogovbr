@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 import textwrap
+import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Union
 from functools import reduce
@@ -86,6 +87,24 @@ def _channel_name_from_url(url: str) -> str:
     parts = hostname.split(".")
 
     return parts[-2] if len(parts) >= 2 else "unknown_channel"
+
+
+def _tag_source(source: str, grouped_result: SearchResult) -> None:
+    """Marca cada item com a fonte canônica que o produziu."""
+    for terms in (grouped_result or {}).values():
+        for departments in (terms or {}).values():
+            for items in (departments or {}).values():
+                for item in items or []:
+                    item.setdefault("source", source)
+
+
+def _count_items(grouped_result: SearchResult) -> int:
+    return sum(
+        len(items)
+        for terms in (grouped_result or {}).values()
+        for departments in terms.values()
+        for items in departments.values()
+    )
 
 
 def merge_results(*dicts: SearchResult) -> SearchResult:
@@ -394,6 +413,7 @@ class DouDigestDagGenerator:
         sources_status: dict[str, dict] = {}
 
         def _run_source(source: str, search_call) -> None:
+            started = time.monotonic()
             try:
                 source_result = search_call() or {}
             except Exception as exc:
@@ -404,12 +424,17 @@ class DouDigestDagGenerator:
                 sources_status[source] = {
                     "status": "failed",
                     "error": f"{type(exc).__name__}: {exc}",
+                    "items_count": 0,
+                    "duration_ms": int((time.monotonic() - started) * 1000),
                 }
                 return
 
+            _tag_source(source, source_result)
             sources_status[source] = {
                 "status": "ok" if source_result else "empty",
                 "error": None,
+                "items_count": _count_items(source_result),
+                "duration_ms": int((time.monotonic() - started) * 1000),
             }
             results[source] = source_result
 
@@ -614,6 +639,108 @@ class DouDigestDagGenerator:
         else:
             sender = sender_class(specs.report)
         sender.send_report(search_report, report_date, executive_summary)
+
+    @staticmethod
+    def _configured_sources(specs: DAGConfig) -> list[str]:
+        """Fontes canônicas solicitadas pela configuração da DAG."""
+        searches = specs.search if isinstance(specs.search, list) else [specs.search]
+        sources: list[str] = []
+
+        for search in searches:
+            for source in search.sources or []:
+                canonical = canonical_source(source)
+                if canonical not in sources:
+                    sources.append(canonical)
+
+        return sources
+
+    @staticmethod
+    def _clipping_connection():
+        """Abre a conexão com o banco do clipping, se configurada."""
+        from airflow.exceptions import AirflowNotFoundException
+        from airflow.providers.postgres.hooks.postgres import PostgresHook
+
+        from clipping_persistence import CLIPPING_CONN_ID
+
+        env_value = os.getenv("AIRFLOW_CONN_CLIPPING_DB")
+        if env_value is not None and not env_value.strip():
+            logger.warning(
+                "AIRFLOW_CONN_CLIPPING_DB está vazio; persistência do clipping "
+                "desativada nesta execução."
+            )
+            return None
+
+        try:
+            return PostgresHook(postgres_conn_id=CLIPPING_CONN_ID).get_conn()
+        except AirflowNotFoundException:
+            logger.warning(
+                "Conexão '%s' não configurada; persistência do clipping "
+                "desativada nesta execução.",
+                CLIPPING_CONN_ID,
+            )
+            return None
+
+    def persist_results(self, num_searches: int, specs: DAGConfig, **context):
+        """Persiste a execução, o status por fonte e os itens coletados."""
+        from clipping_persistence import mark_run_failed, persist_run
+
+        run_key = f"{specs.id}:{context['run_id']}"
+        reference_date = get_reference_date(context)
+        configured_sources = self._configured_sources(specs)
+
+        search_results = self.get_xcom_pull_tasks(
+            num_searches=num_searches, **context
+        )
+        missing_searches = [
+            index
+            for index, result in enumerate(search_results, start=1)
+            if result is None
+        ]
+
+        connection = self._clipping_connection()
+
+        if connection is None:
+            if missing_searches:
+                raise RuntimeError(
+                    "A busca não concluiu e a persistência do clipping não está "
+                    "configurada; a execução será marcada como falha."
+                )
+            return
+
+        try:
+            summary = persist_run(
+                connection,
+                dag_id=specs.id,
+                run_id=run_key,
+                reference_date=reference_date,
+                search_results=search_results,
+                configured_sources=configured_sources,
+            )
+        except Exception as exc:
+            try:
+                connection.rollback()
+            except Exception:
+                logger.exception("Falha ao desfazer a transação do clipping.")
+            try:
+                mark_run_failed(
+                    connection,
+                    run_id=run_key,
+                    dag_id=specs.id,
+                    reference_date=reference_date,
+                    error=f"{type(exc).__name__}: {exc}",
+                    configured_sources=configured_sources,
+                )
+            except Exception:
+                logger.exception("Falha ao marcar a run do clipping como failed.")
+            raise
+        finally:
+            connection.close()
+
+        if summary.status == "failed":
+            raise RuntimeError(
+                "Nenhuma fonte concluiu a busca; a execução do clipping foi "
+                "registrada como failed."
+            )
 
     def create_dag(self, specs: DAGConfig, config_file: str) -> DAG:
         """Creates the DAG object and tasks
@@ -848,8 +975,18 @@ class DouDigestDagGenerator:
                 )
                 notification_upstream_task >> notify_task
 
+            persist_results_task = PythonOperator(
+                task_id="persist_results",
+                python_callable=self.persist_results,
+                op_kwargs={
+                    "num_searches": len(searches),
+                    "specs": specs,
+                },
+                trigger_rule="all_done",
+            )
+
             # pylint: disable=pointless-statement
-            tg_exec_searchs >> has_matches_task
+            tg_exec_searchs >> persist_results_task >> has_matches_task
 
             has_matches_task >> skip_notification_task
 

@@ -159,6 +159,38 @@ O `inlabs_db` deve apontar para o host `postgres`, porta `5432`, banco
 é uma conexão HTTP para `https://inlabs.in.gov.br/` com as credenciais do
 portal.
 
+### Persistência do clipping (fase F1)
+
+Opcional: sem a conexão `clipping_db`, as DAGs funcionam como antes e apenas
+registram um aviso no log. Para habilitar:
+
+```bash
+docker compose \
+  --env-file deploy/prod/.env.production \
+  -f docker-compose.yml \
+  -f deploy/prod/docker-compose.override.yml \
+  exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d postgres -f /clipping-sql/init-db.sql'
+```
+
+> O diretório `clipping/sql` é montado em `/clipping-sql` no serviço
+> `postgres`. Em uma instalação já em execução, recrie apenas o serviço para
+> o mount aparecer: `docker compose ... up -d postgres` (o volume de dados é
+> preservado).
+
+O script cria o banco `clipping`, o schema, as tabelas e as roles
+`clipping_rw`/`clipping_ro` (sem login nem senha). Defina as senhas fora do
+repositório quando a API entrar em operação:
+
+```sql
+ALTER ROLE clipping_ro LOGIN PASSWORD '<senha-forte>';
+ALTER ROLE clipping_rw LOGIN PASSWORD '<senha-forte>';
+```
+
+Depois, defina `AIRFLOW_CONN_CLIPPING_DB` no `.env.production` apontando para
+o banco `clipping` e recrie os serviços do Airflow. O usuário do banco do
+Airflow já tem permissão de escrita; `clipping_rw` é a alternativa de menor
+privilégio.
+
 ## 7. Backup e atualização
 
 Backup lógico do banco do Airflow:
@@ -171,6 +203,22 @@ docker compose \
   exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
   | gzip > airflow-$(date +%F).sql.gz
 ```
+
+Se a persistência do clipping estiver habilitada, faça também o dump do banco
+`clipping`:
+
+```bash
+docker compose \
+  --env-file deploy/prod/.env.production \
+  -f docker-compose.yml \
+  -f deploy/prod/docker-compose.override.yml \
+  exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d clipping' \
+  | gzip > clipping-$(date +%F).sql.gz
+```
+
+Retenção: o schema não expurga dados automaticamente. A política prevista é de
+24 meses; até o job de expurgo (fase F6) entrar em operação, remova itens
+antigos manualmente em lotes por `published_date`, sempre depois do backup.
 
 Também proteja `mnt/airflow-logs` e, se usar OpenSearch, o volume
 `opensearch-data`. Não copie `mnt/pgdata` com o PostgreSQL em execução.

@@ -108,6 +108,7 @@ services:
     volumes:
       - ./mnt/pgdata:/var/lib/postgresql/data
       - ./dag_load_inlabs/sql/:/sql
+      - ./clipping/sql:/clipping-sql
     healthcheck:
       test: [ "CMD", "pg_isready", "-U", "airflow" ]
       interval: 5s
