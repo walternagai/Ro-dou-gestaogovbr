@@ -38,7 +38,7 @@ from utils.select_terms import TermSelector
 from notification.email_sender import EmailSender
 from notification.notification_sender import NotificationSender
 from parsers import DAGConfig, YAMLParser
-from schemas import FetchTermsConfig
+from schemas import FetchTermsConfig, canonical_source
 from searchers import (
     BaseSearcher,
     DOUSearcher,
@@ -48,6 +48,21 @@ from searchers import (
 )
 
 SearchResult = Dict[str, Dict[str, Dict[str, List[dict]]]]
+
+# Mapeia o identificador canônico da fonte para a chave do searcher registrado
+# em `DouDigestDagGenerator.searchers`.
+_SEARCHER_BY_SOURCE = {
+    "DOU": "DOU",
+    "INLABS": "INLABS",
+    "QD": "QD",
+    "DOE:SP": "DOESP",
+}
+
+# Ordem de merge mantida do comportamento anterior: o resultado do QD entra
+# primeiro, seguido das demais fontes na ordem em que foram solicitadas.
+_MERGE_ORDER = ("QD", "DOU", "INLABS", "DOE:SP")
+
+logger = logging.getLogger(__name__)
 
 
 # Microsoft Teams webhooks (Workflows/Power Automate) are served from Azure
@@ -348,84 +363,151 @@ class DouDigestDagGenerator:
         number_of_excerpts: Optional[int],
         **context,
     ) -> dict:
-        """Performs the search in each source and merge the results"""
-        if "DOU" in sources:
-            dou_result = self.searchers["DOU"].exec_search(
-                term_list=term_list,
-                dou_sections=dou_sections,
-                search_date=search_date,
-                field=field,
-                is_exact_search=is_exact_search,
-                ignore_signature_match=ignore_signature_match,
-                force_rematch=force_rematch,
-                department=department,
-                department_ignore=department_ignore,
-                terms_ignore=terms_ignore,
-                pubtype=pubtype,
-                reference_date=get_reference_date(context),
-            )
-        elif "INLABS" in sources:
-            terms = self._parse_term_list(term_list)
-            inlabs_result = self.searchers["INLABS"].exec_search(
-                ai_config=ai_config,
-                terms=terms,
-                dou_sections=dou_sections,
-                search_date=search_date,
-                department=department,
-                department_ignore=department_ignore,
-                terms_ignore=terms_ignore,
-                ignore_signature_match=ignore_signature_match,
-                full_text=full_text,
-                text_length=text_length,
-                use_summary=use_summary,
-                ignore_attachments=ignore_attachments,
-                ignore_inline_tables=ignore_inline_tables,
-                min_table_rows=min_table_rows,
-                ai_search_config=ai_search_config,
-                show_relevancy=show_relevancy,
-                pubtype=pubtype,
-                reference_date=get_reference_date(context),
+        """Performs the search in each source and merge the results.
+
+        Cada fonte é executada de forma isolada: uma falha é registrada em
+        `sources_status` e não impede a coleta das demais fontes.
+        """
+        reference_date = get_reference_date(context)
+        inlabs_terms = self._parse_term_list(term_list)
+
+        canonical_sources: list[str] = []
+        for source in sources or []:
+            canonical = canonical_source(source)
+            if canonical not in canonical_sources:
+                canonical_sources.append(canonical)
+
+        unimplemented = [
+            source
+            for source in canonical_sources
+            if _SEARCHER_BY_SOURCE.get(source) not in self.searchers
+        ]
+        if unimplemented:
+            raise ValueError(
+                "Fonte(s) aceita(s) na configuração, mas ainda não implementada(s) "
+                "nesta versão: "
+                + ", ".join(unimplemented)
+                + ". Remova-a(s) da configuração ou aguarde a fase F2."
             )
 
-        if "QD" in sources:
-            qd_result = self.searchers["QD"].exec_search(
-                territory_id=territory_id,
-                term_list=term_list,
-                is_exact_search=is_exact_search,
-                reference_date=get_reference_date(context),
-                excerpt_size=excerpt_size,
-                number_of_excerpts=number_of_excerpts,
-                result_as_email=result_as_email,
+        results: dict[str, SearchResult] = {}
+        sources_status: dict[str, dict] = {}
+
+        def _run_source(source: str, search_call) -> None:
+            try:
+                source_result = search_call() or {}
+            except Exception as exc:
+                logger.exception(
+                    "Fonte %s falhou e será ignorada nesta execução.",
+                    source,
+                )
+                sources_status[source] = {
+                    "status": "failed",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+                return
+
+            sources_status[source] = {
+                "status": "ok" if source_result else "empty",
+                "error": None,
+            }
+            results[source] = source_result
+
+        for source in canonical_sources:
+            if source == "DOU":
+                _run_source(
+                    source,
+                    lambda: self.searchers["DOU"].exec_search(
+                        term_list=term_list,
+                        dou_sections=dou_sections,
+                        search_date=search_date,
+                        field=field,
+                        is_exact_search=is_exact_search,
+                        ignore_signature_match=ignore_signature_match,
+                        force_rematch=force_rematch,
+                        department=department,
+                        department_ignore=department_ignore,
+                        terms_ignore=terms_ignore,
+                        pubtype=pubtype,
+                        reference_date=reference_date,
+                    ),
+                )
+            elif source == "INLABS":
+                _run_source(
+                    source,
+                    lambda: self.searchers["INLABS"].exec_search(
+                        ai_config=ai_config,
+                        terms=inlabs_terms,
+                        dou_sections=dou_sections,
+                        search_date=search_date,
+                        department=department,
+                        department_ignore=department_ignore,
+                        terms_ignore=terms_ignore,
+                        ignore_signature_match=ignore_signature_match,
+                        full_text=full_text,
+                        text_length=text_length,
+                        use_summary=use_summary,
+                        ignore_attachments=ignore_attachments,
+                        ignore_inline_tables=ignore_inline_tables,
+                        min_table_rows=min_table_rows,
+                        ai_search_config=ai_search_config,
+                        show_relevancy=show_relevancy,
+                        pubtype=pubtype,
+                        reference_date=reference_date,
+                    ),
+                )
+            elif source == "QD":
+                _run_source(
+                    source,
+                    lambda: self.searchers["QD"].exec_search(
+                        territory_id=territory_id,
+                        term_list=term_list,
+                        is_exact_search=is_exact_search,
+                        reference_date=reference_date,
+                        excerpt_size=excerpt_size,
+                        number_of_excerpts=number_of_excerpts,
+                        result_as_email=result_as_email,
+                    ),
+                )
+            elif source == "DOE:SP":
+                _run_source(
+                    source,
+                    lambda: self.searchers["DOESP"].exec_search(
+                        term_list=term_list,
+                        journals=journals,
+                        search_date=search_date,
+                        ignore_signature_match=ignore_signature_match,
+                        force_rematch=force_rematch,
+                        department=department,
+                        department_ignore=department_ignore,
+                        terms_ignore=terms_ignore,
+                        pubtype=pubtype,
+                        reference_date=reference_date,
+                    ),
+                )
+
+        ordered_results = [
+            results[source] for source in _MERGE_ORDER if source in results
+        ]
+
+        if canonical_sources and all(
+            status["status"] == "failed" for status in sources_status.values()
+        ):
+            failed_sources = "; ".join(
+                f"{source}: {status['error']}"
+                for source, status in sources_status.items()
+            )
+            raise RuntimeError(
+                "Nenhuma fonte concluiu a busca; a execução falhou. "
+                f"Fontes com falha -> {failed_sources}"
             )
 
-        if "DOESP" in sources:
-            doesp_result = self.searchers["DOESP"].exec_search(
-                term_list=term_list,
-                journals=journals,
-                search_date=search_date,
-                ignore_signature_match=ignore_signature_match,
-                force_rematch=force_rematch,
-                department=department,
-                department_ignore=department_ignore,
-                terms_ignore=terms_ignore,
-                pubtype=pubtype,
-                reference_date=get_reference_date(context),
-            )
-
-        if "DOU" in sources and "QD" in sources:
-            result = merge_results(qd_result, dou_result)
-        elif "INLABS" in sources and "QD" in sources:
-            result = merge_results(qd_result, inlabs_result)
-        elif "DOESP" in sources and "QD" in sources:
-            result = merge_results(qd_result, doesp_result)
-        elif "DOU" in sources:
-            result = dou_result
-        elif "INLABS" in sources:
-            result = inlabs_result
-        elif "DOESP" in sources:
-            result = doesp_result
+        if not ordered_results:
+            result = {}
+        elif len(ordered_results) == 1:
+            result = ordered_results[0]
         else:
-            result = qd_result
+            result = merge_results(*ordered_results)
 
         # Add more specs info
         search_dict = {}
@@ -434,6 +516,7 @@ class DouDigestDagGenerator:
         search_dict["department"] = department
         search_dict["department_ignore"] = department_ignore
         search_dict["pubtype"] = pubtype
+        search_dict["sources_status"] = sources_status
 
         return search_dict
 

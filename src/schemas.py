@@ -37,6 +37,29 @@ from ai.provider import AIProvider
 from utils.sql_guard import validate_select_only
 
 
+# Fontes de dados aceitas na configuração YAML.
+# `DOESP` é alias depreciado de `DOE:SP` (nome canônico).
+SUPPORTED_SOURCES: tuple[str, ...] = (
+    "DOU",
+    "INLABS",
+    "QD",
+    "DOESP",
+    "DOE:SP",
+    "DOE:MG",
+)
+
+SOURCE_ALIASES: dict[str, str] = {"DOESP": "DOE:SP"}
+
+# Pares de fontes que não podem ser usados juntos: o gerador executaria
+# apenas a primeira, ignorando a segunda silenciosamente.
+EXCLUSIVE_SOURCE_PAIRS: tuple[tuple[str, str], ...] = (("DOU", "INLABS"),)
+
+
+def canonical_source(source: str) -> str:
+    """Retorna o identificador canônico da fonte (ex.: DOESP -> DOE:SP)."""
+    return SOURCE_ALIASES.get(source, source)
+
+
 class DBSelect(BaseModel):
     """Represents the structure of the 'from_db_select' field in the YAML file."""
 
@@ -147,8 +170,9 @@ class SearchConfig(BaseModel):
     )
     sources: Optional[list[str]] = Field(
         default=["DOU"],
-        description="Lista de fontes de dados para pesquisar (Querido Diário [QD], "
-        "Diário Oficial da União [DOU], INLABS). Default: DOU.",
+        description="Lista de fontes de dados para pesquisar (Diário Oficial da "
+        "União [DOU], INLABS, Querido Diário [QD], DOE de São Paulo [DOE:SP, "
+        "alias DOESP] e DOE de Minas Gerais [DOE:MG]). Default: DOU.",
     )
     territory_id: Optional[Union[int, list[int]]] = Field(
         default=None,
@@ -290,6 +314,42 @@ class SearchConfig(BaseModel):
         description="Define se no relatório será exibida a tag de relevância para cada resultado. "
         "(Funcionalidade disponível apenas no INLABS)",
     )
+
+    @field_validator("sources")
+    @classmethod
+    def validate_sources(cls, sources: Optional[list[str]]):
+        """Valida a lista de fontes e rejeita combinações ambíguas."""
+        if sources is None:
+            return sources
+
+        normalized = [source.strip() for source in sources]
+
+        if not normalized:
+            raise ValueError(
+                "A lista 'sources' não pode ser vazia. Valores aceitos: "
+                + ", ".join(SUPPORTED_SOURCES)
+                + "."
+            )
+
+        invalid = [source for source in normalized if source not in SUPPORTED_SOURCES]
+        if invalid:
+            raise ValueError(
+                "Fonte(s) de pesquisa inválida(s): "
+                + ", ".join(invalid)
+                + ". Valores aceitos: "
+                + ", ".join(SUPPORTED_SOURCES)
+                + "."
+            )
+
+        canonical = {canonical_source(source) for source in normalized}
+        for first, second in EXCLUSIVE_SOURCE_PAIRS:
+            if first in canonical and second in canonical:
+                raise ValueError(
+                    f"As fontes '{first}' e '{second}' são mutuamente exclusivas; "
+                    "selecione apenas uma delas."
+                )
+
+        return normalized
 
     @model_validator(mode="after")
     def validate_search_criteria(self):

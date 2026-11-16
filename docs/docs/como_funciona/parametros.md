@@ -24,7 +24,7 @@ O Ro-DOU também oferece duas ferramentas para montar o arquivo sem editá-lo ma
 
 Para cada item de `search` aplica‑se o conjunto de parâmetros abaixo. Nem todos precisam ser informados, mas existe uma **validação interna** que exige pelo menos um dos critérios `terms`, `department` ou `pubtype`. Além disso, se `sources` incluir `QD` (Querido Diário), o uso de `terms` torna‑se obrigatório.
 
-Quando a fonte `DOESP` for utilizada, o parâmetro `journals` poderá ser informado para restringir a busca a cadernos específicos do Diário Oficial do Estado de São Paulo.
+Quando a fonte do Diário Oficial do Estado de São Paulo for utilizada (`DOE:SP`, ou o alias legado `DOESP`), o parâmetro `journals` poderá ser informado para restringir a busca a cadernos específicos desse diário.
 
 - **header** *(opcional)*: Cabeçalho exibido para esta pesquisa no relatório.
 - **date** *(opcional)*: Intervalo de data para busca. Valores: DIA, SEMANA, MES, ANO. Default: DIA.
@@ -32,7 +32,7 @@ Quando a fonte `DOESP` for utilizada, o parâmetro `journals` poderá ser inform
 - **department_ignore** *(opcional)*: Lista de unidades e subordinadas a serem desconsideradas na busca. O nome deve ser idêntico ao da publicação.
 - **terms_ignore** *(opcional)*: Lista de termos serem desconsideradas na busca. O nome deve ser idêntico ao da publicação. **(O recurso está disponível para DOU – limitado ao excerto – e INLABS)**
 - **dou_sections** *(opcional)*: Lista de seções do DOU onde a busca deverá ser realizada. Valores aceitos: SECAO_1, SECAO_2, SECAO_3, EDICAO_EXTRA, EDICAO_SUPLEMENTAR, TODOS. Default: TODOS.
-- **journals** *(opcional)*: Lista de cadernos do Diário Oficial do Estado de São Paulo (DOE-SP) onde a busca deverá ser realizada. Disponível apenas para `DOESP`.
+- **journals** *(opcional)*: Lista de cadernos do Diário Oficial do Estado de São Paulo (DOE-SP) onde a busca deverá ser realizada. Disponível apenas para `DOE:SP` (alias `DOESP`).
 - **field** *(opcional)*: Campos dos quais os termos devem ser pesquisados. Valores: TUDO, TITULO, CONTEUDO. Default: TUDO.
 - **force_rematch** *(opcional)*: Indica que a busca deve ser forçada, mesmo que já tenha sido feita anteriormente. Valores: True ou False. Default: False.
 - **full_text** *(opcional)*: Define se no relatório será exibido o texto completo, ao invés de um resumo. Valores: True ou False. Default: False. (Funcionalidade disponível apenas no INLABS)
@@ -45,7 +45,13 @@ Quando a fonte `DOESP` for utilizada, o parâmetro `journals` poderá ser inform
 - **ignore_signature_match** *(opcional)*: Ignora a correspondência de assinatura ao realizar a busca. Valores: True ou False. Default: False.
 - **is_exact_search** *(opcional)*: Busca somente o termo exato. Valores: True ou False. Default: True.
 - **pubtype** *(opcional)*: Lista de tipos de publicações a serem filtradas na busca. Valores: [Lista de tipos de publicações](tipos_de_publicacoes.md).
-- **sources** *(opcional)*: Fontes de pesquisa dos diários oficiais. Pode ser uma ou uma lista. Opções disponíveis: DOU, QD, INLABS, DOESP. Default: DOU.
+- **sources** *(opcional)*: Fontes de pesquisa dos diários oficiais. Pode ser uma ou uma lista. Opções disponíveis: `DOU`, `QD`, `INLABS`, `DOE:SP` (alias legado `DOESP`) e `DOE:MG`. Default: `DOU`.
+
+  - `DOU` e `INLABS` são **mutuamente exclusivos**: informe apenas um dos dois.
+  - Valores inválidos ou lista vazia são rejeitados na validação do YAML, com a lista de valores aceitos na mensagem de erro.
+  - `DOE:MG` já é aceito na validação, mas a coleta dessa fonte só será habilitada na fase F2. Até lá, incluí-la na configuração faz a execução falhar com uma mensagem explícita, em vez de entregar um resultado incompleto.
+
+  Quando uma fonte falha (indisponibilidade, erro de rede, TLS), as demais continuam sendo executadas e o resultado é entregue com o que foi coletado. O status de cada fonte (`ok`, `empty` ou `failed`, com a mensagem de erro) fica registrado em `sources_status` no resultado da pesquisa e nos logs, para que a lacuna não passe despercebida. Se **todas** as fontes solicitadas falharem, a execução falha — assim o retry e o alerta de falha continuam funcionando em vez de entregar um clipping vazio como se não houvesse publicação.
 - **terms** *(condicionalmente obrigatório)*: Lista de termos a serem buscados. Para o INLABS podem ser utilizados operadores avançados de busca. Veja nota acima sobre validação: se `QD` estiver na lista de `sources`, os termos são exigidos; caso contrário basta informar pelo menos um dos critérios `terms`, `department` ou `pubtype`.
 - **show_relevancy** *(opcional)*: Exibe a relevância da publicação baseado no score do indexador de buscas. Default: False. (Funcionalidade disponível apenas no INLABS com o OpenSearch)
 - **territory_id** *(opcional)*: Lista de identificadores do id do município. Necessário para buscar no Querido Diário. Este parâmetro só deve ser utilizado exclusivamente quando a fonte de dados for o Querido Diário‑QD.
