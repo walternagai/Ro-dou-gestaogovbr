@@ -202,15 +202,17 @@ def test_legacy_doesp_is_canonicalized(generator, mocker):
     assert "DOESP" not in output["sources_status"]
 
 
-def test_unimplemented_source_fails_with_clear_message(generator, mocker):
+def test_doe_mg_uses_mg_searcher(generator, mocker):
     generator.searchers["DOU"] = mocker.Mock()
     generator.searchers["DOU"].exec_search.return_value = _search_result()
+    mg_searcher = mocker.Mock()
+    mg_searcher.exec_search.return_value = _search_result()
+    generator.searchers["MG"] = mg_searcher
 
-    with pytest.raises(ValueError) as excinfo:
-        generator.perform_searches(
-            **_search_kwargs(sources=["DOU", "DOE:MG"]), **_context()
-        )
+    output = generator.perform_searches(
+        **_search_kwargs(sources=["DOU", "DOE:MG"]), **_context()
+    )
 
-    message = str(excinfo.value)
-    assert "DOE:MG" in message
-    assert "fase F2" in message
+    mg_searcher.exec_search.assert_called_once()
+    assert output["sources_status"]["DOE:MG"]["status"] == "ok"
+    assert output["result"]["grupo"]["termo"]["single_department"]

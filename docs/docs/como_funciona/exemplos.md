@@ -32,6 +32,7 @@ Neste segmento, você encontrará uma série de exemplos práticos de utilizaç�
 * [Exemplo 24](#exemplo-24) — omitir anexos e tabelas do corpo do texto
 * [Exemplo 25](#exemplo-25) — resumo executivo geral com IA generativa
 * [Exemplo 26](#exemplo-26) — envio para o Microsoft Teams (`notification`)
+* [Exemplo 27](#exemplo-27) — busca no Diário Oficial do Estado de Minas Gerais (DOE-MG)
 
 ### Exemplo 1
 
@@ -776,3 +777,27 @@ envio aparece como `notify_teams_N`, em que `N` é a posição da URL na lista.
     O parâmetro `sig` da URL autoriza qualquer pessoa a publicar no canal.
     Não compartilhe a URL nem a versione em repositórios públicos; em caso de
     vazamento, exclua o fluxo no Workflows e crie outro.
+
+### Exemplo 27
+Esta configuração demonstra como realizar uma busca no Diário Oficial do Estado de Minas Gerais (DOE-MG), restringindo a pesquisa aos cadernos Executivo e Municípios Mineiros — que são o padrão quando `journals` não é informado. Para incluir Terceiros ou Edição Extra, basta listá-los em `journals`.
+
+```yaml
+dag:
+  id: doemg_example
+  description: "Example DAG searching Diário Oficial do Estado de Minas Gerais (DOE-MG)"
+  search:
+    sources:
+      - DOE:MG
+    terms:
+      - licitação
+      - edital
+    journals:
+      - Executivo
+      - Municipios
+    date: DIA
+  report:
+    emails:
+      - destination@economia.gov.br
+```
+
+Os filtros `department`/`department_ignore` e `pubtype` não são suportados pela API do DOE-MG e são ignorados com aviso no log.

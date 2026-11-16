@@ -46,6 +46,7 @@ from searchers import (
     QDSearcher,
     INLABSSearcher,
     DOESPSearcher,
+    MGSearcher,
 )
 
 SearchResult = Dict[str, Dict[str, Dict[str, List[dict]]]]
@@ -57,11 +58,12 @@ _SEARCHER_BY_SOURCE = {
     "INLABS": "INLABS",
     "QD": "QD",
     "DOE:SP": "DOESP",
+    "DOE:MG": "MG",
 }
 
 # Ordem de merge mantida do comportamento anterior: o resultado do QD entra
 # primeiro, seguido das demais fontes na ordem em que foram solicitadas.
-_MERGE_ORDER = ("QD", "DOU", "INLABS", "DOE:SP")
+_MERGE_ORDER = ("QD", "DOU", "INLABS", "DOE:SP", "DOE:MG")
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +187,7 @@ class DouDigestDagGenerator:
             "QD": QDSearcher(),
             "INLABS": INLABSSearcher(),
             "DOESP": DOESPSearcher(),
+            "MG": MGSearcher(),
         }
 
         self.on_failure_callback = self._notify_on_failure
@@ -503,6 +506,21 @@ class DouDigestDagGenerator:
                         search_date=search_date,
                         ignore_signature_match=ignore_signature_match,
                         force_rematch=force_rematch,
+                        department=department,
+                        department_ignore=department_ignore,
+                        terms_ignore=terms_ignore,
+                        pubtype=pubtype,
+                        reference_date=reference_date,
+                    ),
+                )
+
+            elif source == "DOE:MG":
+                _run_source(
+                    source,
+                    lambda: self.searchers["MG"].exec_search(
+                        term_list=term_list,
+                        journals=journals,
+                        search_date=search_date,
                         department=department,
                         department_ignore=department_ignore,
                         terms_ignore=terms_ignore,

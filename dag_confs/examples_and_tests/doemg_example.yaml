@@ -1,0 +1,16 @@
+dag:
+  id: doemg_example
+  description: "Example DAG searching Diário Oficial do Estado de Minas Gerais (DOE-MG)"
+  search:
+    sources:
+      - DOE:MG
+    terms:
+      - licitação
+      - edital
+    journals:
+      - Executivo
+      - Municipios
+    date: DIA
+  report:
+    emails:
+      - destination@economia.gov.br

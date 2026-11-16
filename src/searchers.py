@@ -17,6 +17,8 @@ import pandas as pd
 import requests
 from unidecode import unidecode
 
+logger = logging.getLogger(__name__)
+
 from typing import Optional
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
@@ -24,6 +26,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from hooks.dou_hook import DOUHook
 from hooks.inlabs_hook import INLABSHook
 from hooks.doesp_hook import DOESPHook
+from hooks.doemg_hook import DOEMGHook
 from utils.search_domains import (
     Field,
     SearchDate,
@@ -891,6 +894,72 @@ class DOESPSearcher(BaseSearcher):
                     r["section"] = "DOESP"
             search_key = "all_publications" if ", ".join(term_list) == "" else ", ".join(term_list)
             search_results[search_key] = results
+
+        time.sleep(self.SCRAPPING_INTERVAL * random() * 2)
+
+        return self._group_results(search_results, term_list)
+
+
+class MGSearcher(BaseSearcher):
+    """Searcher for Diário Oficial do Estado de Minas Gerais (DOE-MG).
+
+    Usa a API pública do Jornal Minas Gerais. O parâmetro ``journals`` aceita
+    os cadernos ``Executivo``, ``Municipios``, ``Terceiros`` e ``EdicaoExtra``;
+    por padrão apenas os dois primeiros são consultados. Filtros de
+    ``department``/``department_ignore`` e ``pubtype`` não são suportados pela
+    API e são ignorados com aviso.
+    """
+
+    mg_hook = DOEMGHook()
+
+    def exec_search(
+        self,
+        term_list,
+        journals: list[str],
+        search_date,
+        department: list[str],
+        department_ignore: list[str],
+        terms_ignore: list[str],
+        pubtype: list[str],
+        reference_date: datetime,
+    ):
+        term_list = self._cast_term_list(term_list)
+
+        if department or department_ignore:
+            logger.warning(
+                "DOE-MG: department/department_ignore não é suportado pela API "
+                "e será ignorado."
+            )
+        if pubtype:
+            logger.warning(
+                "DOE-MG: pubtype não é suportado pela API e será ignorado."
+            )
+
+        results_by_term = self.mg_hook.search(
+            term_list,
+            reference_date,
+            search_date=SearchDate[search_date],
+            cadernos=journals,
+        )
+
+        search_results = {}
+        for term, results in results_by_term.items():
+            filtered = list(results)
+            if terms_ignore:
+                filtered = [
+                    result
+                    for result in filtered
+                    if not any(
+                        ignored.casefold()
+                        in (
+                            f"{result.get('abstract', '')} "
+                            f"{result.get('title', '')}"
+                        ).casefold()
+                        for ignored in terms_ignore
+                    )
+                ]
+            if filtered:
+                search_results[term] = filtered
 
         time.sleep(self.SCRAPPING_INTERVAL * random() * 2)
 

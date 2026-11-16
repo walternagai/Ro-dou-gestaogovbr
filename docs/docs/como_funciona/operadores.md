@@ -1,6 +1,6 @@
 # Operadores de Pesquisa Avançada
 
-⚠️ **Estes operadores estão disponíveis apenas para a fonte INLABS** (`sources: - INLABS`). Eles não se aplicam às demais fontes (DOU, Querido Diário, DOESP).
+⚠️ **Estes operadores estão disponíveis apenas para a fonte INLABS** (`sources: - INLABS`). Eles não se aplicam às demais fontes (DOU, Querido Diário, DOE-SP, DOE-MG).
 
 Os seguintes operadores de pesquisa avançada podem ser utilizados nas consultas configuradas nos arquivos YAML:
 
