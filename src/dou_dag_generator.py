@@ -581,6 +581,15 @@ class DouDigestDagGenerator:
     ) -> str | list:
         """Check if search has matches and return to skip notification or not"""
 
+        dag_run = context.get("dag_run")
+        conf = getattr(dag_run, "conf", None) or {}
+        if conf.get("backfill"):
+            logger.info(
+                "Execução de backfill para %s: notificações suprimidas.",
+                conf.get("reference_date", "data não informada"),
+            )
+            return "skip_notification"
+
         if skip_null:
             search_results = self.get_xcom_pull_tasks(
                 num_searches=num_searches, **context

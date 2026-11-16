@@ -234,6 +234,11 @@ A referência dos endpoints está em
 [checklist de produção](CHECKLIST.md) cobre pré-requisitos, roteamento,
 autenticação, observabilidade, backup e rollback.
 
+Rotinas administrativas (backfill e expurgo) estão em
+[Backfill e retenção](../../docs/docs/como_utilizar/backfill_retencao.md). No
+Kubernetes, o chart pode criar o CronJob mensal com
+`clippingRetention.enabled=true`.
+
 ## 7. Backup e atualização
 
 Backup lógico do banco do Airflow:

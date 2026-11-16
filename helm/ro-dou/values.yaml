@@ -110,6 +110,21 @@ clippingApi:
   tolerations: []
   affinity: {}
 
+
+# Expurgo por retenção (opcional). Usa a imagem e o Secret da API do clipping.
+clippingRetention:
+  enabled: false
+  schedule: "0 3 1 * *"
+  months: 24
+  apiRequestDays: 90
+  batchSize: 1000
+  suspend: false
+  resources: {}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 # Synchronize DAG configuration files from Git (optional)
 gitRsync:
   enabled: false

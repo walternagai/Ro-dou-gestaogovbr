@@ -1,0 +1,60 @@
+{{- if .Values.clippingRetention.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "ro-dou.fullname" . }}-clipping-retention
+  labels:
+    {{- include "ro-dou.labels" . | nindent 4 }}
+    app: clipping-retention
+spec:
+  schedule: {{ .Values.clippingRetention.schedule | quote }}
+  suspend: {{ .Values.clippingRetention.suspend }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: clipping-retention
+            app.kubernetes.io/instance: {{ .Release.Name }}
+          {{- with .Values.clippingRetention.podAnnotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: purge
+              image: "{{ .Values.clippingApi.image.repository }}:{{ .Values.clippingApi.image.tag }}"
+              imagePullPolicy: {{ .Values.clippingApi.image.pullPolicy }}
+              command: ["python", "scripts/purge.py"]
+              args:
+                - "--months"
+                - {{ .Values.clippingRetention.months | quote }}
+                - "--api-request-days"
+                - {{ .Values.clippingRetention.apiRequestDays | quote }}
+                - "--batch-size"
+                - {{ .Values.clippingRetention.batchSize | quote }}
+              envFrom:
+                - secretRef:
+                    name: {{ include "ro-dou.fullname" . }}-clipping-api
+              {{- with .Values.clippingRetention.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          {{- with .Values.clippingRetention.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.clippingRetention.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.clippingRetention.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

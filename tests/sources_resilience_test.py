@@ -233,3 +233,33 @@ def test_doe_mg_uses_mg_searcher(generator, mocker):
     mg_searcher.exec_search.assert_called_once()
     assert output["sources_status"]["DOE:MG"]["status"] == "ok"
     assert output["result"]["grupo"]["termo"]["single_department"]
+
+
+def test_has_matches_skips_notification_on_backfill(generator):
+    context = {
+        "dag_run": SimpleNamespace(
+            conf={"backfill": True, "reference_date": "2026-11-01"}
+        )
+    }
+
+    result = generator.has_matches(
+        num_searches=1,
+        skip_null=False,
+        notify_task_ids=["notify_email"],
+        **context,
+    )
+
+    assert result == "skip_notification"
+
+
+def test_has_matches_keeps_notification_without_backfill(generator):
+    context = {"dag_run": SimpleNamespace(conf={})}
+
+    result = generator.has_matches(
+        num_searches=1,
+        skip_null=False,
+        notify_task_ids=["notify_email"],
+        **context,
+    )
+
+    assert result == ["notify_email"]

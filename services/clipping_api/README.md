@@ -50,6 +50,20 @@ CLIPPING_DB_URL='postgresql://airflow:senha@postgres:5432/clipping' \
 
 A chave em texto puro aparece uma única vez; o banco guarda apenas o `sha256`.
 
+## Backfill e retenção
+
+```bash
+# backfill de até 31 dias (suprime notificações; idempotente)
+python scripts/backfill.py --from 2026-10-01 --to 2026-10-31
+
+# expurgo por retenção (dry-run primeiro)
+python scripts/purge.py --months 24 --dry-run
+python scripts/purge.py --months 24 --vacuum
+```
+
+As variáveis e o passo a passo estão em
+`docs/docs/como_utilizar/backfill_retencao.md`.
+
 ## Testes
 
 ```bash

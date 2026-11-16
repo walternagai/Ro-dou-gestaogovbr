@@ -389,6 +389,23 @@ kubectl -n <namespace> exec deploy/rodou-ro-dou-clipping-api -- \
 
 A referência dos endpoints está em `docs/docs/como_utilizar/api.md`.
 
+### Expurgo por retenção (opcional)
+
+O chart pode criar um CronJob mensal que executa `scripts/purge.py` na mesma
+imagem e com o mesmo Secret da API:
+
+| Valor | Default | Descrição |
+|---|---|---|
+| `clippingRetention.enabled` | `false` | cria o CronJob de expurgo |
+| `clippingRetention.schedule` | `0 3 1 * *` | execução mensal |
+| `clippingRetention.months` | `24` | retenção de itens |
+| `clippingRetention.apiRequestDays` | `90` | retenção da auditoria |
+| `clippingRetention.batchSize` | `1000` | itens por lote |
+| `clippingRetention.suspend` | `false` | pausa o CronJob |
+
+Faça backup antes do primeiro expurgo e valide com `--dry-run` pelo pod.
+Detalhes em `docs/docs/como_utilizar/backfill_retencao.md`.
+
 ## Persistência
 
 O chart cria um PVC para os logs do Airflow, um volume persistente para os
