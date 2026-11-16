@@ -658,8 +658,8 @@ dag:
 - Usuário da API: `clipping_ro`, com `SELECT` em `clipping.*` e `INSERT`
   apenas em `clipping.api_request` (auditoria).
 - `pg_dump` diário do banco `clipping` junto ao backup do Airflow.
-- Retenção padrão 24 meses; expurgo por job mensal com `DELETE` em lote e
-  `VACUUM`.
+- Retenção padrão 24 meses; expurgo por job mensal (`scripts/purge.py` ou
+  CronJob `clippingRetention`) com `DELETE` em lote e `VACUUM`.
 
 ### 12.3 Autenticação da API
 

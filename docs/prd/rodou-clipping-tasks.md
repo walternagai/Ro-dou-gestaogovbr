@@ -275,7 +275,13 @@ validado por `helm lint` e `helm template`, métricas Prometheus e logs JSON sem
 payload, smoke test em `services/clipping_api/scripts/smoke_test.py` e checklist
 em `deploy/prod/CHECKLIST.md`.
 
-**Status (G):** pendente — backfill e expurgo por retenção.
+**Status (G):** concluído em 16/11/2026 (G1–G3). Evidências:
+`services/clipping_api/scripts/backfill.py` (janela de 31 dias, fins de semana,
+dry-run, checagem de execução existente e supressão de notificações via
+`conf.backfill`), `scripts/purge.py` (lotes, execuções órfãs, auditoria de 90
+dias e `VACUUM` opcional), CronJob `clippingRetention` no Helm e documentação em
+`como_utilizar/backfill_retencao.md`. Testes: unitários do backfill, integração
+do expurgo com PostgreSQL e teste da supressão de notificações.
 
 ---
 
