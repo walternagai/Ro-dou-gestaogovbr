@@ -263,6 +263,28 @@ class Database:
             )
             return {row["source"]: dict(row) for row in cursor.fetchall()}
 
+    def create_queued_run(
+        self, *, run_id: str, dag_id: str, reference_date, sources
+    ) -> None:
+        """Registra a run assim que o Airflow aceita o disparo."""
+        with self._cursor(commit=True) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO clipping.run
+                    (id, dag_id, dag_run_id, reference_date, status,
+                     sources_requested, started_at)
+                VALUES (%s, %s, %s, %s, 'queued', %s, now())
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (
+                    run_id,
+                    dag_id,
+                    run_id.split(":", 1)[-1],
+                    reference_date,
+                    list(sources or []),
+                ),
+            )
+
     def has_running_run(self, reference_date) -> bool:
         with self._cursor() as cursor:
             cursor.execute(

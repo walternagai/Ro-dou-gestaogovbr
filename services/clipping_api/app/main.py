@@ -498,6 +498,16 @@ def trigger_run(request: Request, body: TriggerRequest):
     )
     run_id = f"{settings.dag_id}:{dag_run_id}"
 
+    try:
+        request.app.state.db.create_queued_run(
+            run_id=run_id,
+            dag_id=settings.dag_id,
+            reference_date=body.reference_date,
+            sources=body.sources,
+        )
+    except Exception:  # noqa: BLE001 - a run já foi disparada; não falhar o 202
+        logger.exception("Falha ao registrar a run queued do clipping")
+
     if idempotency_key:
         with _IDEMPOTENCY_LOCK:
             _IDEMPOTENCY[idempotency_key] = (

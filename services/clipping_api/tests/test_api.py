@@ -149,7 +149,7 @@ def test_trigger_requires_trigger_scope(api):
 
 
 def test_trigger_is_idempotent(api, mocker):
-    client, _ = api
+    client, database = api
     from app import main as api_main
 
     trigger = mocker.patch.object(api_main, "trigger_dag", return_value="run-1")
@@ -164,6 +164,7 @@ def test_trigger_is_idempotent(api, mocker):
     assert first.json()["run_id"] == "rodou_clipping:run-1"
     assert second.json()["run_id"] == first.json()["run_id"]
     trigger.assert_called_once()
+    assert database.queued_runs[0]["id"] == "rodou_clipping:run-1"
 
 
 def test_trigger_conflicts_with_running_run(api, mocker):

@@ -11,6 +11,7 @@ class FakeDB:
         self.source_runs: list[dict] = []
         self.audits: list[dict] = []
         self.running_dates: set[date] = set()
+        self.queued_runs: list[dict] = []
 
     def health(self) -> bool:
         return True
@@ -102,6 +103,16 @@ class FakeDB:
         ):
             latest.setdefault(row["source"], row)
         return latest
+
+    def create_queued_run(self, *, run_id, dag_id, reference_date, sources):
+        self.queued_runs.append(
+            {
+                "id": run_id,
+                "dag_id": dag_id,
+                "reference_date": reference_date,
+                "sources": list(sources or []),
+            }
+        )
 
     def has_running_run(self, reference_date) -> bool:
         return reference_date in self.running_dates
