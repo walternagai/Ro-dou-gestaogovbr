@@ -1,7 +1,7 @@
 """Fixtures dos testes da API do clipping."""
 
 import os
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +18,7 @@ from .fake_db import FakeDB, make_item, make_run
 
 @pytest.fixture()
 def api():
+    now_utc = datetime.now(UTC)
     database = FakeDB()
     database.keys[hash_key("read-key")] = {
         "id": "key-read",
@@ -67,13 +68,13 @@ def api():
             "source": "DOU",
             "status": "ok",
             "items_count": 1,
-            "started_at": datetime(2026, 11, 14, 5, 0),
+            "started_at": now_utc,
         },
         {
             "source": "QD",
             "status": "failed",
             "items_count": 0,
-            "started_at": datetime(2026, 11, 14, 5, 10),
+            "started_at": now_utc,
         },
     ]
 

@@ -28,8 +28,8 @@ relevante. Marque apenas o que foi observado de fato.
 
 - [ ] `docker compose ... config --quiet` válido com os arquivos de produção.
 - [ ] Serviço sobe com `--profile clipping up -d clipping-api`.
-- [ ] `GET https://<host>/clipping/healthz` retorna 200.
-- [ ] `GET https://<host>/clipping/openapi.json` retorna 200.
+- [ ] `GET https://<host>/clipping/healthz`, `/clipping/livez` e `/clipping/readyz` retornam 200.
+- [ ] `GET https://<host>/clipping/openapi.json` retorna 200 (ou 404 com `CLIPPING_EXPOSE_DOCS=false`).
 - [ ] Airflow continua acessível no mesmo host (`/login`, `/api/v2/monitor/health`).
 - [ ] Prioridade do router `/clipping` é maior que a do router do Airflow.
 - [ ] Nenhuma porta da API publicada diretamente no host de produção.
@@ -74,8 +74,8 @@ relevante. Marque apenas o que foi observado de fato.
 
 ## 5. Observabilidade
 
-- [ ] `GET /clipping/metrics` expõe `clipping_api_requests_total`,
-      `clipping_api_throttled_total` e `clipping_api_source_status`.
+- [ ] `GET /internal/metrics` (rede interna) expõe `clipping_api_requests_total`,
+      `clipping_api_throttled_total` e `clipping_api_source_status` (e `/clipping/metrics` retorna 404 externamente).
 - [ ] Logs da API em JSON, sem payload/query string.
 - [ ] Alerta para `clipping_api_source_status{status="failed"} == 1` por 2 dias.
 - [ ] Alerta para taxa de 5xx e para 429 acima do esperado.
@@ -100,12 +100,12 @@ relevante. Marque apenas o que foi observado de fato.
 | 5 | Dia sem publicação do MG é `empty` | run sem erro |
 | 6 | `DOESP` e `DOE:SP` equivalentes | teste de paridade |
 | 7 | `sources` inválido falha claro | mensagem com valores aceitos |
-| 8 | API responde 401/400 e declara `sources_failed` | smoke test |
+| 8 | API responde 401/422 e declara `sources_failed` | smoke test |
 | 9 | Trigger 202 e conflito 409 | smoke test |
 | 10 | Persistência sobrevive a falha de SMTP | execução com SMTP desligado |
 | 11 | Suíte permanece verde | `make tests` |
 | 12 | OpenAPI com `operationId` estáveis | `/clipping/openapi.json` |
 | 13 | 304 com `If-None-Match` | smoke test |
 | 14 | Escopo de trigger aplicado | 403/202 |
-| 15 | Erro acionável com `allowed` | 400 de fonte inválida |
+| 15 | Erro acionável com `allowed` | 422 de fonte/UF inválida |
 | 16 | Rotas do Airflow intactas | `/login` e `/api/v2/monitor/health` |

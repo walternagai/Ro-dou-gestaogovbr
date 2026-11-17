@@ -2,6 +2,8 @@
 
 from datetime import date, datetime
 
+from app.db import normalize_failure
+
 
 class FakeDB:
     def __init__(self):
@@ -12,9 +14,10 @@ class FakeDB:
         self.audits: list[dict] = []
         self.running_dates: set[date] = set()
         self.queued_runs: list[dict] = []
+        self.healthy: bool = True
 
     def health(self) -> bool:
-        return True
+        return self.healthy
 
     def get_api_key(self, key_hash: str):
         return self.keys.get(key_hash)
@@ -35,6 +38,7 @@ class FakeDB:
         since=None,
         limit=50,
         offset=0,
+        cursor=None,
     ):
         rows = []
         for item in self.items:
@@ -49,7 +53,9 @@ class FakeDB:
             if uf and item.get("uf") != uf:
                 continue
             if q:
-                haystack = f"{item.get('title') or ''} {item.get('abstract') or ''}".casefold()
+                haystack = (
+                    f"{item.get('title') or ''} {item.get('abstract') or ''}".casefold()
+                )
                 if q.casefold() not in haystack:
                     continue
             if since is not None and not (item["updated_at"] > since):
@@ -58,19 +64,51 @@ class FakeDB:
 
         rows.sort(key=lambda row: row["id"])
         rows.sort(key=lambda row: row["published_date"], reverse=True)
-        return rows[offset : offset + limit], len(rows)
+        total = len(rows)
+
+        if cursor is not None:
+            cursor_date, cursor_id = cursor
+            rows = [
+                row
+                for row in rows
+                if (row["published_date"] < cursor_date)
+                or (row["published_date"] == cursor_date and row["id"] > cursor_id)
+            ]
+            sliced = rows[: limit + 1]
+        else:
+            sliced = rows[offset : offset + limit + 1]
+
+        has_more = len(sliced) > limit
+        return sliced[:limit], total, has_more
 
     def get_item(self, item_id: str):
         return next((item for item in self.items if item["id"] == item_id), None)
 
     # ------------------------------------------------------------------
     def list_runs(self, *, date=None, limit=50):
-        runs = [run for run in self.runs if date is None or run["reference_date"] == date]
+        runs = [
+            {
+                **run,
+                "sources_failed": [
+                    normalize_failure(f) for f in (run.get("sources_failed") or [])
+                ],
+            }
+            for run in self.runs
+            if date is None or run["reference_date"] == date
+        ]
         runs.sort(key=lambda run: run["started_at"], reverse=True)
         return runs[:limit]
 
     def get_run(self, run_id: str):
-        return next((run for run in self.runs if run["id"] == run_id), None)
+        run = next((run for run in self.runs if run["id"] == run_id), None)
+        if run is None:
+            return None
+        return {
+            **run,
+            "sources_failed": [
+                normalize_failure(f) for f in (run.get("sources_failed") or [])
+            ],
+        }
 
     def runs_summary(self, *, date_from, date_to):
         runs = [
@@ -88,7 +126,8 @@ class FakeDB:
                 if source not in ok:
                     ok.append(source)
             for failure in run.get("sources_failed") or []:
-                failed.setdefault(failure["source"], failure)
+                normalized = normalize_failure(failure)
+                failed.setdefault(normalized["source"], normalized)
 
         return {
             "sources_requested": requested,
@@ -98,10 +137,16 @@ class FakeDB:
 
     def source_statuses(self):
         latest: dict[str, dict] = {}
+        last_success: dict[str, datetime] = {}
         for row in sorted(
             self.source_runs, key=lambda entry: entry["started_at"], reverse=True
         ):
-            latest.setdefault(row["source"], row)
+            latest.setdefault(row["source"], dict(row))
+            if row.get("status") in ("ok", "empty"):
+                last_success.setdefault(row["source"], row["started_at"])
+
+        for source, entry in latest.items():
+            entry["last_success_at"] = last_success.get(source)
         return latest
 
     def create_queued_run(self, *, run_id, dag_id, reference_date, sources):
@@ -128,6 +173,7 @@ def make_item(
     abstract: str = "licitação",
     updated_at: datetime | None = None,
     url: str | None = None,
+    content_hash: str | None = None,
 ):
     return {
         "id": item_id,
@@ -141,6 +187,7 @@ def make_item(
         "abstract": abstract,
         "url": url or f"https://example.test/{item_id}",
         "matched_terms": ["licitação"],
+        "content_hash": content_hash or f"hash-{item_id}",
         "updated_at": updated_at or datetime(2026, 11, 14, 8, 0),
     }
 

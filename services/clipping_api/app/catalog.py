@@ -1,8 +1,15 @@
 """Catálogo estático das fontes expostas pela API.
 
 Mantido em sincronia com ``src/state_adapters.py`` (teste de paridade em
-``tests/test_api_catalog.py``). O catálogo evita importar Airflow na API.
+``tests/test_units.py``). O catálogo evita importar Airflow na API.
 """
+
+from typing import Literal
+
+SourceId = Literal["DOU", "QD", "INLABS", "DOE:SP", "DOE:MG"]
+UfCode = Literal["MG", "SP"]
+RunStatus = Literal["queued", "running", "success", "partial", "failed"]
+SourceLastStatus = Literal["ok", "empty", "failed"]
 
 SOURCES: dict[str, dict] = {
     "DOU": {
@@ -38,6 +45,9 @@ SOURCES: dict[str, dict] = {
 }
 
 SOURCE_NAMES = tuple(SOURCES)
+SUPPORTED_UFS = tuple(
+    sorted({entry["uf"] for entry in SOURCES.values() if entry["uf"]})
+)
 
 
 def validate_sources(sources: list[str]) -> list[str]:

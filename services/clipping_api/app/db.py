@@ -1,6 +1,7 @@
 """Acesso ao banco ``clipping`` (somente leitura + auditoria)."""
 
 import contextlib
+from datetime import date
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -8,6 +9,27 @@ from psycopg2.extras import RealDictCursor
 
 class DatabaseUnavailable(RuntimeError):
     """O banco não está configurado ou não respondeu."""
+
+
+def normalize_failure(failure: dict) -> dict:
+    """Normaliza um registro de falha de fonte para o contrato tipado."""
+    return {
+        "source": failure.get("source") or "?",
+        "code": failure.get("code") or "UPSTREAM_ERROR",
+        "message": failure.get("message")
+        or failure.get("error")
+        or "Falha na coleta",
+        "at": failure.get("at"),
+    }
+
+
+def _normalize_run(row: dict) -> dict:
+    row = dict(row)
+    row["sources_failed"] = [
+        normalize_failure(failure)
+        for failure in (row.get("sources_failed") or [])
+    ]
+    return row
 
 
 class Database:
@@ -121,7 +143,8 @@ class Database:
         since=None,
         limit: int = 50,
         offset: int = 0,
-    ) -> tuple[list[dict], int]:
+        cursor: tuple[date, str] | None = None,
+    ) -> tuple[list[dict], int, bool]:
         where_sql, params = self._item_filters(
             date=date,
             date_from=date_from,
@@ -132,34 +155,55 @@ class Database:
             since=since,
         )
 
-        with self._cursor() as cursor:
-            cursor.execute(
+        page_where = where_sql
+        page_params = dict(params)
+        page_params["fetch_limit"] = limit + 1
+
+        if cursor is not None:
+            cursor_date, cursor_id = cursor
+            page_where = (
+                f"({where_sql}) AND "
+                "((published_date < %(cursor_date)s) "
+                "OR (published_date = %(cursor_date)s AND id > %(cursor_id)s))"
+            )
+            page_params["cursor_date"] = cursor_date
+            page_params["cursor_id"] = cursor_id
+            pagination_sql = "LIMIT %(fetch_limit)s"
+        else:
+            page_params["offset"] = offset
+            pagination_sql = "LIMIT %(fetch_limit)s OFFSET %(offset)s"
+
+        with self._cursor() as db_cursor:
+            db_cursor.execute(
                 f"SELECT count(*) AS total FROM clipping.item WHERE {where_sql}",
                 params,
             )
-            total = cursor.fetchone()["total"]
+            total = db_cursor.fetchone()["total"]
 
-            cursor.execute(
+            db_cursor.execute(
                 f"""
                 SELECT id, source, uf, gazette, published_date, section, org,
-                       title, abstract, url, matched_terms, updated_at
+                       title, abstract, url, matched_terms, content_hash,
+                       updated_at
                   FROM clipping.item
-                 WHERE {where_sql}
+                 WHERE {page_where}
                  ORDER BY published_date DESC, id ASC
-                 LIMIT %(limit)s OFFSET %(offset)s
+                 {pagination_sql}
                 """,
-                {**params, "limit": limit, "offset": offset},
+                page_params,
             )
-            rows = [dict(row) for row in cursor.fetchall()]
+            rows = [dict(row) for row in db_cursor.fetchall()]
 
-        return rows, int(total)
+        has_more = len(rows) > limit
+        return rows[:limit], int(total), has_more
 
     def get_item(self, item_id: str) -> dict | None:
         with self._cursor() as cursor:
             cursor.execute(
                 """
                 SELECT id, source, uf, gazette, published_date, section, org,
-                       title, abstract, url, matched_terms, updated_at
+                       title, abstract, url, matched_terms, content_hash,
+                       updated_at
                   FROM clipping.item
                  WHERE id = %s
                 """,
@@ -191,7 +235,7 @@ class Database:
                 """,
                 params,
             )
-            return [dict(row) for row in cursor.fetchall()]
+            return [_normalize_run(row) for row in cursor.fetchall()]
 
     def get_run(self, run_id: str) -> dict | None:
         with self._cursor() as cursor:
@@ -206,7 +250,7 @@ class Database:
                 (run_id,),
             )
             row = cursor.fetchone()
-            return dict(row) if row else None
+            return _normalize_run(row) if row else None
 
     def runs_summary(self, *, date_from, date_to) -> dict:
         with self._cursor() as cursor:
@@ -234,14 +278,8 @@ class Database:
                 if source not in ok:
                     ok.append(source)
             for failure in run.get("sources_failed") or []:
-                failed.setdefault(
-                    failure.get("source", "?"),
-                    {
-                        "source": failure.get("source"),
-                        "error": failure.get("error"),
-                        "at": failure.get("at"),
-                    },
-                )
+                normalized = normalize_failure(failure)
+                failed.setdefault(normalized["source"], normalized)
 
         return {
             "sources_requested": requested,
@@ -253,12 +291,26 @@ class Database:
         with self._cursor() as cursor:
             cursor.execute(
                 """
-                SELECT DISTINCT ON (sr.source)
-                       sr.source, sr.status, sr.items_count, sr.error,
-                       sr.duration_ms, r.started_at
-                  FROM clipping.source_run sr
-                  JOIN clipping.run r ON r.id = sr.run_id
-                 ORDER BY sr.source, r.started_at DESC
+                WITH latest AS (
+                    SELECT DISTINCT ON (sr.source)
+                           sr.source, sr.status, sr.items_count, sr.error,
+                           sr.duration_ms, r.started_at
+                      FROM clipping.source_run sr
+                      JOIN clipping.run r ON r.id = sr.run_id
+                     ORDER BY sr.source, r.started_at DESC
+                ),
+                last_ok AS (
+                    SELECT sr.source, MAX(r.started_at) AS last_success_at
+                      FROM clipping.source_run sr
+                      JOIN clipping.run r ON r.id = sr.run_id
+                     WHERE sr.status IN ('ok', 'empty')
+                     GROUP BY sr.source
+                )
+                SELECT latest.source, latest.status, latest.items_count,
+                       latest.error, latest.duration_ms, latest.started_at,
+                       last_ok.last_success_at
+                  FROM latest
+                  LEFT JOIN last_ok USING (source)
                 """
             )
             return {row["source"]: dict(row) for row in cursor.fetchall()}

@@ -5,7 +5,9 @@ Uso:
     CLIPPING_API_KEY=<chave> \
         python services/clipping_api/scripts/smoke_test.py
 
-Sem `CLIPPING_API_KEY`, valida apenas health, OpenAPI e o 401.
+Sem `CLIPPING_API_KEY`, valida apenas sondas de saúde, OpenAPI e o 401.
+Defina `CLIPPING_INTERNAL_URL` (ex.: `http://clipping-api:8000`) para validar
+`/internal/metrics` na rede interna.
 """
 
 import os
@@ -15,6 +17,7 @@ from datetime import date, timedelta
 import httpx
 
 BASE_URL = os.getenv("CLIPPING_API_URL", "http://localhost:8000").rstrip("/")
+INTERNAL_URL = os.getenv("CLIPPING_INTERNAL_URL", "").rstrip("/")
 API_KEY = os.getenv("CLIPPING_API_KEY")
 REFERENCE_DATE = os.getenv(
     "CLIPPING_API_DATE", (date.today() - timedelta(days=1)).isoformat()
@@ -37,27 +40,44 @@ def main() -> int:
     health = httpx.get(f"{BASE_URL}/clipping/healthz", timeout=10)
     check("healthz 200", health.status_code == 200, f"HTTP {health.status_code}")
 
+    livez = httpx.get(f"{BASE_URL}/clipping/livez", timeout=10)
+    check("livez 200", livez.status_code == 200, f"HTTP {livez.status_code}")
+
+    readyz = httpx.get(f"{BASE_URL}/clipping/readyz", timeout=10)
+    check("readyz 200", readyz.status_code == 200, f"HTTP {readyz.status_code}")
+
     openapi = httpx.get(f"{BASE_URL}/clipping/openapi.json", timeout=10)
-    paths = (openapi.json() or {}).get("paths", {}) if openapi.status_code == 200 else {}
-    check("openapi 200", openapi.status_code == 200, f"HTTP {openapi.status_code}")
-    check(
-        "openapi com /clipping/v1/items",
-        "/clipping/v1/items" in paths,
-    )
+    spec = openapi.json() if openapi.status_code == 200 else {}
+    paths = (spec or {}).get("paths", {})
+    schemes = ((spec or {}).get("components") or {}).get("securitySchemes", {})
+    if openapi.status_code == 200:
+        check("openapi com /clipping/v1/items", "/clipping/v1/items" in paths)
+        check("openapi com ApiKeyAuth", "ApiKeyAuth" in schemes)
+    else:
+        print(f"[SKIP] openapi desabilitado (HTTP {openapi.status_code})")
 
     unauthorized = httpx.get(
         f"{BASE_URL}/clipping/v1/items",
         params={"date": REFERENCE_DATE},
         timeout=10,
     )
-    check("401 sem chave", unauthorized.status_code == 401, f"HTTP {unauthorized.status_code}")
-
-    metrics = httpx.get(f"{BASE_URL}/clipping/metrics", timeout=10)
     check(
-        "metrics exposto",
-        metrics.status_code == 200 and "clipping_api_requests_total" in metrics.text,
-        f"HTTP {metrics.status_code}",
+        "401 sem chave",
+        unauthorized.status_code == 401
+        and unauthorized.json().get("code") == "UNAUTHORIZED",
+        f"HTTP {unauthorized.status_code}",
     )
+
+    if INTERNAL_URL:
+        metrics = httpx.get(f"{INTERNAL_URL}/internal/metrics", timeout=10)
+        check(
+            "metrics interno exposto",
+            metrics.status_code == 200
+            and "clipping_api_requests_total" in metrics.text,
+            f"HTTP {metrics.status_code}",
+        )
+    else:
+        print("[SKIP] metrics interno (defina CLIPPING_INTERNAL_URL)")
 
     if API_KEY:
         headers = {"X-API-Key": API_KEY}
@@ -72,7 +92,11 @@ def main() -> int:
         sources = httpx.get(
             f"{BASE_URL}/clipping/v1/sources", headers=headers, timeout=10
         )
-        check("sources com chave", sources.status_code == 200, f"HTTP {sources.status_code}")
+        check(
+            "sources com chave",
+            sources.status_code == 200,
+            f"HTTP {sources.status_code}",
+        )
     else:
         print("[SKIP] consultas autenticadas (defina CLIPPING_API_KEY)")
 

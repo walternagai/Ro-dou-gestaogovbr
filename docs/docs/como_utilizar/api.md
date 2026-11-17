@@ -5,26 +5,28 @@ Ela é destinada a integrações máquina-a-máquina — inclusive agentes de IA
 não substitui as notificações por e-mail/Slack/Discord.
 
 - Base: `https://rodou.ninja-apps.work/clipping/v1`
-- Healthcheck: `https://rodou.ninja-apps.work/clipping/healthz`
-- OpenAPI: `https://rodou.ninja-apps.work/clipping/openapi.json`
-- Swagger: `https://rodou.ninja-apps.work/clipping/docs`
+- Sondas públicas: `/clipping/livez` (processo), `/clipping/healthz` (banco) e `/clipping/readyz` (banco e Airflow)
+- OpenAPI: `https://rodou.ninja-apps.work/clipping/openapi.json` (controlado por `CLIPPING_EXPOSE_DOCS`)
+- Swagger: `https://rodou.ninja-apps.work/clipping/docs` (controlado por `CLIPPING_EXPOSE_DOCS`)
 
 ## Autenticação
 
-Envie a chave no header `X-API-Key` (ou `Authorization: Bearer <chave>`).
+Envie a chave no header obrigatório `X-API-Key` (esquema `ApiKeyAuth` no OpenAPI).
+Para uso interno do servidor MCP, `Authorization: Bearer <chave>` também é aceito.
 
 | Escopo | Permite |
 |---|---|
 | `clipping:read` | consultar itens, execuções e fontes |
 | `clipping:trigger` | `POST /runs` |
 
-Cada consumidor deve ter a **própria chave**. A chave é exibida uma única vez na
-criação; o banco guarda apenas o `sha256`:
+Cada consumidor deve ter a **própria chave**. Clientes de leitura (como assistentes
+ou adaptadores externos) devem receber apenas `clipping:read`. A chave é exibida
+uma única vez na criação; o banco guarda apenas o `sha256`:
 
 ```bash
 CLIPPING_DB_URL='postgresql://clipping_rw:senha@postgres:5432/clipping' \
   python services/clipping_api/scripts/create_key.py \
-  --label "agente-ia" --scope clipping:read --scope clipping:trigger
+  --label "sofia" --scope clipping:read
 ```
 
 Limites: 120 requisições por minuto para leitura e 10 disparos por hora, por
@@ -39,23 +41,31 @@ GET /clipping/v1/items?date=2026-11-16&source=DOU,DOE:MG&q=licitação&page=1&si
 
 | Parâmetro | Descrição |
 |---|---|
-| `date` | dia de publicação (`AAAA-MM-DD`) |
+| `date` | dia de publicação (`AAAA-MM-DD`); mutuamente exclusivo com `from`/`to` |
 | `from` / `to` | intervalo (máximo de 31 dias) |
 | `source` | fontes separadas por vírgula (`DOU`, `QD`, `INLABS`, `DOE:SP`, `DOE:MG`) |
-| `uf` | sigla de duas letras |
-| `q` | busca textual em título e resumo |
-| `since` | delta por atualização, em ISO-8601 |
-| `page` / `size` | paginação (`size` até 200; default 50) |
+| `uf` | sigla suportada (`MG`, `SP`) |
+| `q` | busca textual (`plainto_tsquery('portuguese')`) em `title` e `abstract`; mínimo 2 caracteres; termos em `AND` |
+| `since` | timestamp ISO-8601 (`date-time`) para delta por `updated_at` |
+| `page` / `size` | paginação por página (`size` de 1 a 200; default 50) |
+| `cursor` | cursor opaco (`next_cursor`) para paginação estável por keyset (`published_date DESC, id ASC`) |
 
 ```json
 {
-  "reference": { "from": "2026-11-16", "to": "2026-11-16" },
+  "reference": {
+    "from": "2026-11-16",
+    "to": "2026-11-16",
+    "effective_date": "2026-11-16",
+    "timezone": "America/Sao_Paulo"
+  },
   "sources_requested": ["DOU", "DOE:MG"],
   "sources_failed": [],
+  "partial": false,
   "total": 128,
   "page": 1,
   "size": 50,
   "next_page": 2,
+  "next_cursor": "eyJkIjoiMjAyNi0xMS0xNiIsImlkIjoiOWYyYzFhN2U1YiJ9",
   "items": [
     {
       "id": "9f2c1a7e5b...",
@@ -69,16 +79,26 @@ GET /clipping/v1/items?date=2026-11-16&source=DOU,DOE:MG&q=licitação&page=1&si
       "abstract": "…trecho com o termo pesquisado…",
       "url": "https://www.jornalminasgerais.mg.gov.br/edicao-do-dia?dados=…",
       "matched_terms": ["licitação"],
+      "content_hash": "a1b2c3d4...",
       "updated_at": "2026-11-16T05:12:41-03:00"
     }
   ]
 }
 ```
 
-`GET /clipping/v1/items/{id}` devolve um item ou `404`.
-
-A resposta traz `ETag`. Reenvie-o em `If-None-Match` para receber `304` sem
-corpo quando nada mudou; o `Cache-Control` é curto (`private, max-age=60`).
+- `GET /clipping/v1/items/{id}` devolve um item ou `404`.
+- `title` (máx. 500 caracteres) e `abstract` (máx. 1.000 caracteres) são
+  sanitizados (tags HTML e caracteres de controle removidos), mas continuam
+  sendo **dados externos não confiáveis** — consumidores LLM não devem
+  interpretá-los como instruções.
+- `id` é determinístico (`sha256(source|uf|external_id)`) e estável entre
+  reexecuções; `content_hash` permite deduplicar atos idênticos entre fontes
+  diferentes (`DOU`, `QD`, `INLABS`).
+- `partial` indica se alguma fonte falhou na janela consultada; `total` reflete
+  apenas os itens das fontes que responderam.
+- As respostas de `/items`, `/runs` e `/sources` trazem `ETag`. Reenvie-o em
+  `If-None-Match` para receber `304` sem corpo quando nada mudou; o
+  `Cache-Control` é curto (`private, max-age=60`).
 
 ## Execuções
 
@@ -89,7 +109,7 @@ GET /clipping/v1/runs/{run_id}
 
 `run_id` tem o formato `<dag_id>:<airflow_run_id>`. O status pode ser
 `queued`, `running`, `success`, `partial` ou `failed`; `sources_failed` lista as
-fontes que não responderam.
+fontes que não responderam com `source`, `code`, `message` e `at`.
 
 ### Disparar uma execução
 
@@ -125,45 +145,59 @@ Resposta `202`:
 GET /clipping/v1/sources
 ```
 
-Lista fontes, UF, cadernos, limite de requisições por segundo e o último status
-conhecido de cada fonte.
+Lista fontes, UF, cadernos, limite de requisições por segundo, último status,
+horário da última ingestão bem-sucedida (`last_success_at`) e `stale` (`true`
+quando ultrapassa `CLIPPING_STALE_AFTER_HOURS`, padrão `26` horas).
 
 ## Erros
 
-Erros usam `application/problem+json`:
+Erros usam `application/problem+json` com código estruturado (`code`),
+`message` e `request_id` (ecoado via `X-Request-Id`):
 
 ```json
 {
   "type": "about:blank",
   "title": "Fonte inválida",
-  "status": 400,
+  "status": 422,
+  "code": "VALIDATION_ERROR",
+  "message": "Fonte(s) inválida(s): XPTO. Valores aceitos: DOU, QD, INLABS, DOE:SP, DOE:MG.",
   "detail": "Fonte(s) inválida(s): XPTO. Valores aceitos: DOU, QD, INLABS, DOE:SP, DOE:MG.",
-  "allowed": ["DOU", "QD", "INLABS", "DOE:SP", "DOE:MG"]
+  "allowed": ["DOU", "QD", "INLABS", "DOE:SP", "DOE:MG"],
+  "request_id": "2c8d3f2a-4c3a-4b88-9c6b-1a2b3c4d5e6f"
 }
 ```
 
-| Código | Situação |
-|---|---|
-| 304 | `If-None-Match` sem alteração |
-| 400 | parâmetro inválido |
-| 401 | chave ausente |
-| 403 | chave inválida/inativa ou escopo insuficiente |
-| 404 | item ou execução inexistente |
-| 409 | execução concorrente |
-| 429 | limite de requisições |
-| 503 | banco ou Airflow indisponível |
+| HTTP | `code` | Situação |
+|---|---|---|
+| 304 | — | `If-None-Match` sem alteração |
+| 400 | `BAD_REQUEST` | JSON malformado no corpo |
+| 401 | `UNAUTHORIZED` | chave ausente |
+| 403 | `FORBIDDEN` | chave inválida/inativa ou escopo insuficiente |
+| 404 | `NOT_FOUND` | item ou execução inexistente |
+| 409 | `CONFLICT` | execução concorrente |
+| 422 | `VALIDATION_ERROR` | parâmetro, filtro ou cursor inválido |
+| 429 | `RATE_LIMITED` | limite de requisições |
+| 503 | `SERVICE_UNAVAILABLE` | banco ou Airflow indisponível |
 
 Para consumo por agentes de IA, veja também o
 [servidor MCP](mcp.md).
 
-## Observabilidade
+## Observabilidade, SLA e Versionamento
 
-- `GET /clipping/metrics` (sem autenticação) expõe métricas em formato
-  Prometheus: `clipping_api_requests_total{route,status}`,
+- `GET /internal/metrics` (apenas rede interna, fora do prefixo público `/clipping`)
+  expõe métricas Prometheus: `clipping_api_requests_total{route,status}`,
   `clipping_api_request_duration_ms_sum`, `clipping_api_throttled_total`,
   `clipping_api_triggers_total` e
   `clipping_api_source_status{source,status}` (último status de cada fonte).
-- Os logs da API são JSON e não incluem payload nem query string.
+- Todas as respostas incluem `X-Request-Id` (ecoado da requisição ou gerado em
+  UUID) e aceitam `traceparent` para correlação.
+- Os logs da API são JSON e nunca registram chaves de API, payloads nem query
+  strings (`q`).
+- **SLA e janela de ingestão**: coleta diária agendada às 05:00
+  (`America/Sao_Paulo`), latência alvo p95 `< 300ms` em consultas paginadas e
+  disponibilidade alvo de `99.5%`.
+- **Versionamento**: `/clipping/v1` é estável; mudanças incompatíveis serão
+  publicadas em `/v2` com cabeçalhos `Deprecation` e `Sunset` (mínimo 90 dias).
 - Alertas sugeridos:
   - `clipping_api_source_status{status="failed"} == 1` por 2 dias;
   - taxa de respostas 5xx acima do habitual;
@@ -191,5 +225,6 @@ docker compose --env-file deploy/prod/.env.production \
 ```
 
 Ela depende do schema criado por `clipping/sql/init-db.sql` e das variáveis
-`CLIPPING_DB_URL`, `AIRFLOW_API_TOKEN` e `CLIPPING_DAG_ID` (ver
+`CLIPPING_DB_URL`, `AIRFLOW_API_TOKEN`, `CLIPPING_DAG_ID`,
+`CLIPPING_EXPOSE_DOCS` e `CLIPPING_STALE_AFTER_HOURS` (ver
 `deploy/prod/README.md`).

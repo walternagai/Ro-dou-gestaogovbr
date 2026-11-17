@@ -398,7 +398,7 @@ Confira também:
 - `POST /clipping/v1/runs` → 202; `GET /clipping/v1/runs?date=...` mostra
   `queued` imediatamente e depois `success`/`partial`.
 - `GET /clipping/v1/items?date=...` retorna os itens e `sources_failed`.
-- `GET /clipping/metrics` expõe as métricas Prometheus.
+- `GET /internal/metrics` (rede interna) expõe as métricas Prometheus.
 
 ### Indisponibilidade do DOU
 

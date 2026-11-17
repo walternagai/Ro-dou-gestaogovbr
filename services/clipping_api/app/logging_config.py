@@ -11,6 +11,8 @@ _EXTRA_FIELDS = (
     "latency_ms",
     "key_id",
     "run_id",
+    "request_id",
+    "traceparent",
 )
 
 
@@ -24,7 +26,9 @@ class JsonFormatter(logging.Formatter):
         }
         for field in _EXTRA_FIELDS:
             if hasattr(record, field):
-                payload[field] = getattr(record, field)
+                value = getattr(record, field)
+                if value is not None:
+                    payload[field] = value
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=False)

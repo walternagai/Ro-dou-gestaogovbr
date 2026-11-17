@@ -4,14 +4,22 @@ import hashlib
 import time
 from collections import defaultdict, deque
 
-from fastapi import Header, Request
+from fastapi import Header, Request, Security
+from fastapi.security import APIKeyHeader
 
 from .db import DatabaseUnavailable
-from .problems import ApiProblem
+from .problems import ApiProblem, ClippingErrorCode
 from .settings import get_settings
 
 READ_SCOPE = "clipping:read"
 TRIGGER_SCOPE = "clipping:trigger"
+
+api_key_header = APIKeyHeader(
+    name="X-API-Key",
+    scheme_name="ApiKeyAuth",
+    description="Chave de API emitida para o consumidor (escopo clipping:read ou clipping:trigger).",
+    auto_error=False,
+)
 
 
 def hash_key(raw_key: str) -> str:
@@ -59,30 +67,42 @@ def require_scope(scope: str):
 
     def dependency(
         request: Request,
-        x_api_key: str | None = Header(default=None, alias="X-API-Key"),
-        authorization: str | None = Header(default=None),
+        x_api_key: str | None = Security(api_key_header),
+        authorization: str | None = Header(default=None, include_in_schema=False),
     ) -> dict:
         raw_key = x_api_key or _bearer(authorization)
         if not raw_key:
             raise ApiProblem(
                 401,
                 "Chave de API ausente",
-                detail="Envie o header X-API-Key (ou Authorization: Bearer).",
+                detail="Envie o header X-API-Key.",
+                code=ClippingErrorCode.UNAUTHORIZED,
             )
 
         try:
             key = request.app.state.db.get_api_key(hash_key(raw_key))
         except DatabaseUnavailable as exc:
-            raise ApiProblem(503, "Banco indisponível", detail=str(exc)) from exc
+            raise ApiProblem(
+                503,
+                "Banco indisponível",
+                detail=str(exc),
+                code=ClippingErrorCode.SERVICE_UNAVAILABLE,
+            ) from exc
 
         if not key or not key.get("active"):
-            raise ApiProblem(403, "Chave inválida ou inativa")
+            raise ApiProblem(
+                403,
+                "Chave inválida ou inativa",
+                detail="A chave informada não existe ou foi revogada.",
+                code=ClippingErrorCode.FORBIDDEN,
+            )
 
         if scope not in (key.get("scope") or []):
             raise ApiProblem(
                 403,
                 "Escopo insuficiente",
                 detail=f"A chave precisa do escopo '{scope}'.",
+                code=ClippingErrorCode.FORBIDDEN,
             )
 
         settings = get_settings()
@@ -108,6 +128,7 @@ def require_scope(scope: str):
                 "Limite de requisições excedido",
                 detail=f"Limite de {limit} requisições por {window} segundos.",
                 headers={"Retry-After": str(retry_after)},
+                code=ClippingErrorCode.RATE_LIMITED,
             )
 
         return key
