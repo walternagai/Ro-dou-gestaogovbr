@@ -58,6 +58,23 @@ services:
       traefik.http.services.clipping.loadbalancer.healthcheck.path: "/clipping/healthz"
       traefik.http.services.clipping.loadbalancer.healthcheck.interval: "30s"
 
+  clipping-mcp:
+    networks:
+      - default
+      - traefik
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "${TRAEFIK_NETWORK:?Defina TRAEFIK_NETWORK no .env.production}"
+      traefik.http.routers.clipping-mcp.rule: "Host(`${RO_DOU_HOST:?Defina RO_DOU_HOST no .env.production}`) && PathPrefix(`/clipping/mcp`)"
+      traefik.http.routers.clipping-mcp.priority: "110"
+      traefik.http.routers.clipping-mcp.entrypoints: "${TRAEFIK_ENTRYPOINT:-websecure}"
+      traefik.http.routers.clipping-mcp.tls: "true"
+      traefik.http.routers.clipping-mcp.tls.certresolver: "${TRAEFIK_CERT_RESOLVER:-letsencrypt}"
+      traefik.http.routers.clipping-mcp.service: "clipping-mcp"
+      traefik.http.services.clipping-mcp.loadbalancer.server.port: "8000"
+      traefik.http.services.clipping-mcp.loadbalancer.healthcheck.path: "/clipping/mcp/healthz"
+      traefik.http.services.clipping-mcp.loadbalancer.healthcheck.interval: "30s"
+
 networks:
   traefik:
     external: true

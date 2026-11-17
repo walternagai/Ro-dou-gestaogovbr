@@ -111,6 +111,39 @@ clippingApi:
   affinity: {}
 
 
+
+# Servidor MCP do clipping (optional, requer a API do clipping).
+clippingMcp:
+  enabled: false
+  image:
+    repository: ghcr.io/gestaogovbr/ro-dou-clipping-mcp
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 8000
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: clipping.local
+        paths:
+          - path: /clipping/mcp
+            pathType: Prefix
+    tls: []
+  # Default: http://<release>-clipping-api:<clippingApi.port>
+  apiBaseUrl: ""
+  env:
+    MCP_MAX_ITEMS_PER_CALL: "50"
+    MCP_MAX_ABSTRACT_LENGTH: "1000"
+  resources: {}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 # Expurgo por retenção (opcional). Usa a imagem e o Secret da API do clipping.
 clippingRetention:
   enabled: false

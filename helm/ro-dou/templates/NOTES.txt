@@ -18,3 +18,10 @@ API do clipping:
    kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "ro-dou.fullname" . }}-clipping-api -- \
      python scripts/create_key.py --label "agente-ia" --scope clipping:read --scope clipping:trigger
 {{- end }}
+{{- if .Values.clippingMcp.enabled }}
+
+Servidor MCP:
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ro-dou.fullname" . }}-clipping-mcp 8000:{{ .Values.clippingMcp.port }}
+   Healthcheck: http://localhost:8000/clipping/mcp/healthz
+   Envie X-API-Key (ou Authorization: Bearer) em cada requisição.
+{{- end }}

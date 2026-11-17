@@ -14,6 +14,7 @@ nav:
     - Notificação de erros: como_utilizar/notificacao_de_erros.md
     - Habilitando IA nos resumos: como_utilizar/habilitando_ia.md
     - API do clipping: como_utilizar/api.md
+    - Servidor MCP: como_utilizar/mcp.md
     - Backfill e retenção: como_utilizar/backfill_retencao.md
   - Como funciona:
     - Introdução: como_funciona/intro_funcionamento.md

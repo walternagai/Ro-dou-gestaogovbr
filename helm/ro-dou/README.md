@@ -389,6 +389,22 @@ kubectl -n <namespace> exec deploy/rodou-ro-dou-clipping-api -- \
 
 A referência dos endpoints está em `docs/docs/como_utilizar/api.md`.
 
+### Servidor MCP (opcional)
+
+Expõe as ferramentas de clipping para agentes de IA em `/clipping/mcp`.
+Depende da API do clipping (`clippingApi.enabled=true` ou `apiBaseUrl`
+apontando para uma API externa).
+
+| Valor | Default | Descrição |
+|---|---|---|
+| `clippingMcp.enabled` | `false` | implanta Deployment/Service/Ingress do MCP |
+| `clippingMcp.image.repository` | `ghcr.io/gestaogovbr/ro-dou-clipping-mcp` | imagem |
+| `clippingMcp.port` | `8000` | porta HTTP |
+| `clippingMcp.apiBaseUrl` | release + `-clipping-api` | URL da API do clipping |
+| `clippingMcp.ingress.enabled` | `false` | publica `/clipping/mcp` |
+| `clippingMcp.env.MCP_MAX_ITEMS_PER_CALL` | `50` | limite de itens |
+| `clippingMcp.env.MCP_MAX_ABSTRACT_LENGTH` | `1000` | truncamento do abstract |
+
 ### Expurgo por retenção (opcional)
 
 O chart pode criar um CronJob mensal que executa `scripts/purge.py` na mesma

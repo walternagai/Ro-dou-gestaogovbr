@@ -1,0 +1,19 @@
+{{- if .Values.clippingMcp.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ro-dou.fullname" . }}-clipping-mcp
+  labels:
+    {{- include "ro-dou.labels" . | nindent 4 }}
+    app: clipping-mcp
+spec:
+  type: {{ .Values.clippingMcp.service.type }}
+  selector:
+    app: clipping-mcp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: {{ .Values.clippingMcp.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

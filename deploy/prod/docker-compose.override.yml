@@ -144,6 +144,17 @@ services:
     mem_limit: ${CLIPPING_API_MEM_LIMIT:-512m}
     logging: *default-logging
 
+  clipping-mcp:
+    environment:
+      CLIPPING_API_BASE_URL: "http://clipping-api:8000"
+      MCP_MAX_ITEMS_PER_CALL: "50"
+      MCP_MAX_ABSTRACT_LENGTH: "1000"
+    ports: !override []
+    networks:
+      - default
+    mem_limit: ${CLIPPING_MCP_MEM_LIMIT:-256m}
+    logging: *default-logging
+
 networks:
   backend:
     internal: true

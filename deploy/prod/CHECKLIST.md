@@ -50,6 +50,17 @@ relevante. Marque apenas o que foi observado de fato.
 - [ ] Sem token configurado, `POST /runs` retorna 503.
 - [ ] Reprocessar a mesma data não duplica itens.
 
+### MCP (se habilitado)
+
+- [ ] `GET /clipping/mcp/healthz` retorna 200.
+- [ ] `initialize` responde com `protocolVersion` e `serverInfo`.
+- [ ] `tools/list` lista as 6 ferramentas.
+- [ ] `tools/call` repassa `X-API-Key`/`Bearer` para a API.
+- [ ] `list_items` limita a 50 itens e trunca `abstract` em 1.000 caracteres.
+- [ ] Respostas textuais trazem o aviso de conteúdo não confiável.
+- [ ] `trigger_run` sem escopo `clipping:trigger` retorna erro de permissão.
+- [ ] Transporte `stdio` funciona com `CLIPPING_API_KEY` local.
+
 ## 5. Observabilidade
 
 - [ ] `GET /clipping/metrics` expõe `clipping_api_requests_total`,

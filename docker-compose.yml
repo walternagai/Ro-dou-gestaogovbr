@@ -118,6 +118,22 @@ services:
         condition: service_started
     restart: always
 
+  clipping-mcp:
+    build:
+      context: ./services/clipping_mcp
+    container_name: clipping-mcp
+    profiles: ["clipping"]
+    environment:
+      CLIPPING_API_BASE_URL: "http://clipping-api:8000"
+      MCP_MAX_ITEMS_PER_CALL: "50"
+      MCP_MAX_ABSTRACT_LENGTH: "1000"
+    ports:
+      - "8082:8000"
+    depends_on:
+      clipping-api:
+        condition: service_started
+    restart: always
+
   postgres:
     image: postgres:17.5-alpine
     environment:

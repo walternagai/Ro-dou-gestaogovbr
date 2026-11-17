@@ -287,11 +287,15 @@ down:
 
 .PHONY: tests
 tests:
-	docker exec airflow-api-server sh -c "cd /opt/airflow/tests/ && pytest -vvv --color=yes && cd /opt/airflow/services/clipping_api && pytest -q -p no:cacheprovider tests"
+	docker exec airflow-api-server sh -c "cd /opt/airflow/tests/ && pytest -vvv --color=yes && cd /opt/airflow/services/clipping_api && pytest -q -p no:cacheprovider tests && cd /opt/airflow/services/clipping_mcp && pytest -q -p no:cacheprovider tests"
 
 .PHONY: test-clipping-api
 test-clipping-api:
 	docker exec airflow-api-server sh -c "cd /opt/airflow/services/clipping_api && pytest -q -p no:cacheprovider tests"
+
+.PHONY: test-clipping-mcp
+test-clipping-mcp:
+	docker exec airflow-api-server sh -c "cd /opt/airflow/services/clipping_mcp && pytest -q -p no:cacheprovider tests"
 
 .PHONY: tests-live
 tests-live:

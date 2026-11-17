@@ -229,6 +229,26 @@ Airflow) e usa:
 - `CLIPPING_DAG_ID` — DAG disparada por `POST /clipping/v1/runs` (default
   `rodou_clipping`).
 
+### Servidor MCP
+
+O servidor MCP expõe as mesmas ferramentas para agentes de IA em
+`https://<host>/clipping/mcp`, com transporte HTTP (JSON-RPC/SSE) e `stdio`
+local. Ele sobe no mesmo profile `clipping`:
+
+```bash
+docker compose \
+  --env-file deploy/prod/.env.production \
+  -f docker-compose.yml \
+  -f deploy/prod/docker-compose.override.yml \
+  -f deploy/prod/docker-compose.traefik-host.yml \
+  --profile clipping up -d clipping-api clipping-mcp
+```
+
+O MCP não tem banco nem credencial própria: repassa `X-API-Key` (ou
+`Authorization: Bearer`) para a API. Para uso local em `stdio`, defina
+`CLIPPING_API_BASE_URL` e `CLIPPING_API_KEY` e execute
+`python services/clipping_mcp/scripts/stdio_server.py`.
+
 A referência dos endpoints está em
 [API do clipping](../../docs/docs/como_utilizar/api.md). O
 [checklist de produção](CHECKLIST.md) cobre pré-requisitos, roteamento,

@@ -146,6 +146,9 @@ Erros usam `application/problem+json`:
 | 429 | limite de requisições |
 | 503 | banco ou Airflow indisponível |
 
+Para consumo por agentes de IA, veja também o
+[servidor MCP](mcp.md).
+
 ## Observabilidade
 
 - `GET /clipping/metrics` (sem autenticação) expõe métricas em formato
