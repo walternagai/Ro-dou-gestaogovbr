@@ -298,6 +298,14 @@ Só iniciar após a v1 em produção e o agente consumindo a API.
 | H5 | Testes: paridade REST, permissão, limites, injeção | H1–H4 | 5 h | Suíte MCP verde |
 | H6 | Guia para o dev do agente (ferramentas, exemplos, erros) | H1–H4 | 3 h | Documento entregue ao time do agente |
 
+
+**Status:** concluído em 17/11/2026 (H1–H6). Evidências:
+`services/clipping_mcp/` (JSON-RPC MCP com HTTP/SSE e stdio), 6 ferramentas,
+auth passthrough, limite de 50 itens/1.000 caracteres com aviso de conteúdo não
+confiável, propagação de `Idempotency-Key`, testes unitários/HTTP (21),
+integração no Compose profile `clipping`, rotas Traefik com prioridade 110,
+chart Helm (`clippingMcp`), imagem Docker e documentação em
+`como_utilizar/mcp.md`.
 ---
 
 ## 10. Sequência sugerida (1 dev)

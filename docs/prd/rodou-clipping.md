@@ -534,8 +534,8 @@ implementação de dados:
   | `list_sources` | `GET /sources` | `clipping:read` |
   | `trigger_run` | `POST /runs` | `clipping:trigger` |
 
-- **Transporte**: Streamable HTTP em `https://rodou.ninja-apps.work/clipping/mcp`
-  (mesmo router Traefik), e `stdio` para desenvolvimento local.
+- **Transporte**: HTTP JSON-RPC em `https://rodou.ninja-apps.work/clipping/mcp`,
+  SSE em `/clipping/mcp/sse` + `/clipping/mcp/messages` e `stdio` local.
 - **Autenticação**: a chave do agente é repassada como `X-API-Key` (ou
   `Authorization: Bearer`) ao servidor MCP, que a repassa à API; o MCP não tem
   store de chaves próprio.
@@ -545,8 +545,8 @@ implementação de dados:
   caracteres, paginação explícita; nunca despejar o dia inteiro numa única
   resposta.
 - **Segurança de conteúdo**: títulos e abstracts são dados não confiáveis;
-  o servidor nunca os interpreta como instrução e não executa nada a partir
-  deles (mitigação de prompt injection).
+  as respostas textuais são precedidas de aviso e o servidor nunca os
+  interpreta como instrução (mitigação de prompt injection).
 - **Observabilidade**: cada chamada de ferramenta registra `key_id`,
   ferramenta, duração e status; erros 5xx alertam como os da API.
 - **Critério de saída da fase 2**: o agente executa o ciclo diário completo
