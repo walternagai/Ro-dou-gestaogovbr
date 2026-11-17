@@ -433,10 +433,11 @@ class DouDigestDagGenerator:
                 return
 
             _tag_source(source, source_result)
+            item_count = _count_items(source_result)
             sources_status[source] = {
-                "status": "ok" if source_result else "empty",
+                "status": "ok" if item_count else "empty",
                 "error": None,
-                "items_count": _count_items(source_result),
+                "items_count": item_count,
                 "duration_ms": int((time.monotonic() - started) * 1000),
             }
             results[source] = source_result

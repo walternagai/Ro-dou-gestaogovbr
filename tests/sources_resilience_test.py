@@ -263,3 +263,14 @@ def test_has_matches_keeps_notification_without_backfill(generator):
     )
 
     assert result == ["notify_email"]
+
+
+def test_grouped_result_without_items_is_empty(generator, mocker):
+    generator.searchers["DOU"] = mocker.Mock()
+    generator.searchers["DOU"].exec_search.return_value = {"grupo": {}}
+
+    output = generator.perform_searches(**_search_kwargs(sources=["DOU"]), **_context())
+
+    status = output["sources_status"]["DOU"]
+    assert status["status"] == "empty"
+    assert status["items_count"] == 0
