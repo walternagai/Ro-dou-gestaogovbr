@@ -149,3 +149,6 @@ test_notrack/
 values-local.yaml
 
 docs/CODEBASE_MAP.md
+
+# chave local da API do clipping (nunca versionar)
+.clipping_api_key
