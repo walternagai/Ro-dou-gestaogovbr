@@ -17,6 +17,12 @@ relevante. Marque apenas o que foi observado de fato.
 - [ ] `CLIPPING_DB_URL` definida (recomendado: `clipping_ro`) ou usando o
       padrão do Compose.
 - [ ] Imagem da API publicada com tag imutável (não `latest`).
+- [ ] Imagem do Airflow reconstruída a partir do commit atual (o override não
+      monta `src` no contêiner).
+- [ ] DAG `rodou_clipping` carregada e desativada da pausa (ou pausada de
+      propósito durante indisponibilidade do DOU).
+- [ ] `AIRFLOW__API_AUTH__JWT_EXPIRATION_TIME` definido e token de serviço
+      rotacionado.
 
 ## 2. Subida e roteamento
 
@@ -49,6 +55,10 @@ relevante. Marque apenas o que foi observado de fato.
 - [ ] Execução concorrente retorna 409.
 - [ ] Sem token configurado, `POST /runs` retorna 503.
 - [ ] Reprocessar a mesma data não duplica itens.
+- [ ] `POST /runs` cria a run como `queued` e ela aparece em
+      `GET /runs?date=...` antes do término.
+- [ ] Com a DAG pausada, o disparo retorna 202 mas a run permanece `queued`;
+      a operação sabe que precisa desativar a pausa.
 
 ### MCP (se habilitado)
 
@@ -59,6 +69,7 @@ relevante. Marque apenas o que foi observado de fato.
 - [ ] `list_items` limita a 50 itens e trunca `abstract` em 1.000 caracteres.
 - [ ] Respostas textuais trazem o aviso de conteúdo não confiável.
 - [ ] `trigger_run` sem escopo `clipping:trigger` retorna erro de permissão.
+- [ ] `trigger_run` só executa se a DAG estiver desativada da pausa.
 - [ ] Transporte `stdio` funciona com `CLIPPING_API_KEY` local.
 
 ## 5. Observabilidade

@@ -7,6 +7,17 @@ O Ro-DOU é uma ferramenta que efetua um clipping do Diário Oficial da União (
 
 Para acessar a página de documentação do Ro-DOU, que contém detalhes sobre o funcionamento da ferramenta e o modo de utilizá-la, além de outras informações importantes, acesse o link <https://gestaogovbr.github.io/Ro-dou/>.
 
+## Rodou Clipping (API e MCP)
+
+Os resultados do clipping podem ser persistidos no banco `clipping` e consumidos
+por uma API HTTP e por um servidor MCP para agentes de IA:
+
+- **API**: `/clipping/v1` — [documentação](docs/docs/como_utilizar/api.md)
+- **MCP**: `/clipping/mcp` — [documentação](docs/docs/como_utilizar/mcp.md)
+- **Backfill e retenção**: [guia](docs/docs/como_utilizar/backfill_retencao.md)
+- **Implantação de produção**: [runbook](deploy/prod/README.md)
+
+
 > **Atenção ao atualizar:** buscas com termos vindos de banco de dados
 > (`from_db_select`) agora só aceitam consultas compostas por uma única
 > instrução `SELECT`. Revise o `sql` dos YAMLs existentes antes de atualizar

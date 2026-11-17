@@ -111,6 +111,13 @@ Resposta `202`:
   `run_id`.
 - `409` indica que já existe execução em andamento para a data.
 - `503` indica que o disparo não está configurado ou o Airflow está indisponível.
+- A run é criada como `queued` imediatamente e aparece em
+  `GET /clipping/v1/runs?date=...`; depois evolui para `running` e
+  `success`/`partial`/`failed`.
+- Se a DAG estiver **pausada**, o `202` é aceito, mas a run permanece `queued`
+  e não executa até a DAG ser desativada da pausa (operação).
+- O token do Airflow (`AIRFLOW_API_TOKEN`) tem validade configurável e deve ser
+  rotacionado; sem token, o endpoint responde `503`.
 
 ## Fontes
 

@@ -33,6 +33,7 @@ Neste segmento, você encontrará uma série de exemplos práticos de utilizaç�
 * [Exemplo 25](#exemplo-25) — resumo executivo geral com IA generativa
 * [Exemplo 26](#exemplo-26) — envio para o Microsoft Teams (`notification`)
 * [Exemplo 27](#exemplo-27) — busca no Diário Oficial do Estado de Minas Gerais (DOE-MG)
+* [Exemplo 28](#exemplo-28) — configuração de produção do Rodou Clipping (sem notificações)
 
 ### Exemplo 1
 
@@ -801,3 +802,32 @@ dag:
 ```
 
 Os filtros `department`/`department_ignore` e `pubtype` não são suportados pela API do DOE-MG e são ignorados com aviso no log.
+
+### Exemplo 28
+Configuração usada em produção pelo Rodou Clipping: coleta DOU e DOE-MG, com o
+resultado consumido pela API e pelo servidor MCP em vez de notificações. O
+bloco `report: {}` mantém a DAG sem envio de e-mail/Slack/Discord; para voltar a
+notificar, informe `emails`/`notification` e configure o SMTP.
+
+```yaml
+dag:
+  id: rodou_clipping
+  description: "Clipping diário do DOU e do DOE-MG"
+  owner:
+    - tresia
+  search:
+    sources:
+      - DOU
+      - DOE:MG
+    terms:
+      - licitação
+      - contrato
+    journals:
+      - Executivo
+      - Municipios
+    date: DIA
+  report: {}
+```
+
+A DAG é criada pausada (`AIRFLOW_DAGS_PAUSED=true`). Desative a pausa para o
+agendamento diário ou deixe o agente disparar via `POST /clipping/v1/runs`.

@@ -363,3 +363,24 @@ do `AGENTS.md`) antes de seguir.
 - Frontend/web do Rodou Clipping.
 - OIDC/gov.br.
 - Migração do INLABS para fonte própria.
+
+## 14. Status de produção (17/11/2026)
+
+Implantação validada no ambiente `rodou.ninja-apps.work`:
+
+- **Imagens**: publicadas via GitHub Actions no GHCR (`ro-dou-clipping-api` e
+  `ro-dou-clipping-mcp`).
+- **Banco**: schema `clipping`, tabelas, índices e roles aplicados.
+- **Airflow**: imagem reconstruída com o código atual (F0–G), JWT de serviço com
+  validade configurada e conexão `clipping_db`.
+- **Serviços**: `clipping-api` e `clipping-mcp` no profile `clipping`, atrás do
+  Traefik em `/clipping` e `/clipping/mcp`.
+- **DAG**: `rodou_clipping` (DOU + DOE-MG, sem notificações), pausada durante a
+  indisponibilidade do DOU.
+- **Validação**: DOE-MG com 19 itens reais persistidos, consultados pela API e
+  pelo MCP; isolamento do DOU comprovado com o código em produção.
+- **Bloqueio externo**: `www.in.gov.br` retornando 502 no CDN (Azion). O retry
+  herdado do DOU (5×5 por termo) torna a execução longa; recomenda-se reduzir o
+  retry em falhas persistentes.
+- **Operação**: chave do agente e token do Airflow em arquivos locais com
+  permissão `600`, fora do git.

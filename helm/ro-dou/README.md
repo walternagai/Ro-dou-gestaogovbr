@@ -389,6 +389,13 @@ kubectl -n <namespace> exec deploy/rodou-ro-dou-clipping-api -- \
 
 A referência dos endpoints está em `docs/docs/como_utilizar/api.md`.
 
+**Imagens:** os defaults apontam para `ghcr.io/gestaogovbr/ro-dou-clipping-api`
+e `ghcr.io/gestaogovbr/ro-dou-clipping-mcp`. O workflow
+`.github/workflows/publish-clipping-images.yml` publica em
+`ghcr.io/<owner>/...`; em forks, ajuste `clippingApi.image.repository` e
+`clippingMcp.image.repository` para o owner correto ou use `--set` no deploy.
+
+
 ### Servidor MCP (opcional)
 
 Expõe as ferramentas de clipping para agentes de IA em `/clipping/mcp`.

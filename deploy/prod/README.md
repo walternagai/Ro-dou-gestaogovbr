@@ -249,6 +249,58 @@ O MCP não tem banco nem credencial própria: repassa `X-API-Key` (ou
 `CLIPPING_API_BASE_URL` e `CLIPPING_API_KEY` e execute
 `python services/clipping_mcp/scripts/stdio_server.py`.
 
+### Publicação das imagens (GHCR)
+
+As imagens da API e do MCP são publicadas pelo workflow
+`.github/workflows/publish-clipping-images.yml` (manual ou por tag
+`clipping-v*`):
+
+```bash
+gh workflow run publish-clipping-images.yml --ref main
+```
+
+As imagens ficam em `ghcr.io/<owner>/ro-dou-clipping-api` e
+`ghcr.io/<owner>/ro-dou-clipping-mcp`. O workflow usa `GITHUB_TOKEN` com
+`packages: write`; no fork, o owner é o da conta que executa. Para usar outro
+owner no Helm, ajuste `clippingApi.image.repository` e
+`clippingMcp.image.repository`. O Compose constrói as imagens localmente
+(`--profile clipping build`), então a publicação no GHCR é necessária para
+Helm/outros hosts.
+
+### DAG de produção e token do Airflow
+
+Crie `dag_confs/rodou_clipping.yaml` (o diretório é ignorado pelo git) com as
+fontes e termos desejados. Exemplo sem notificações — o consumo fica por conta
+da API/MCP:
+
+```yaml
+dag:
+  id: rodou_clipping
+  description: "Clipping diário do DOU e do DOE-MG"
+  owner: [tresia]
+  search:
+    sources: [DOU, DOE:MG]
+    terms: [licitação, contrato]
+    journals: [Executivo, Municipios]
+    date: DIA
+  report: {}
+```
+
+Depois de o dag-processor carregar a DAG, desative a pausa:
+
+```bash
+docker exec airflow-api-server airflow dags unpause rodou_clipping
+```
+
+A API dispara a DAG com `AIRFLOW_API_TOKEN`. Gere/rotacione o token em
+`POST /auth/token` com um usuário administrador; a validade segue
+`AIRFLOW__API_AUTH__JWT_EXPIRATION_TIME` (recomendado 31536000 s para token de
+serviço, com rotação periódica). Sem token, `POST /runs` responde `503`.
+
+> **DAG pausada:** `POST /runs` responde `202` e cria a run como `queued`, mas
+> o Airflow não executa até a DAG ser desativada da pausa. Acompanhe em
+> `GET /clipping/v1/runs?date=...`.
+
 A referência dos endpoints está em
 [API do clipping](../../docs/docs/como_utilizar/api.md). O
 [checklist de produção](CHECKLIST.md) cobre pré-requisitos, roteamento,
@@ -284,9 +336,10 @@ docker compose \
   | gzip > clipping-$(date +%F).sql.gz
 ```
 
-Retenção: o schema não expurga dados automaticamente. A política prevista é de
-24 meses; até o job de expurgo (fase F6) entrar em operação, remova itens
-antigos manualmente em lotes por `published_date`, sempre depois do backup.
+Retenção: use `services/clipping_api/scripts/purge.py` (ou o CronJob
+`clippingRetention` no Helm), sempre depois do backup. O padrão é 24 meses para
+itens e 90 dias para a auditoria; veja
+[Backfill e retenção](../../docs/docs/como_utilizar/backfill_retencao.md).
 
 Também proteja `mnt/airflow-logs` e, se usar OpenSearch, o volume
 `opensearch-data`. Não copie `mnt/pgdata` com o PostgreSQL em execução.
@@ -295,17 +348,76 @@ Atualização:
 
 ```bash
 git pull
+
+# O código é embutido na imagem: reconstrua os serviços do Airflow.
 docker compose \
   --env-file deploy/prod/.env.production \
   -f docker-compose.yml \
   -f deploy/prod/docker-compose.override.yml \
-  build --pull
+  build --pull airflow-api-server airflow-scheduler airflow-dag-processor
 docker compose \
   --env-file deploy/prod/.env.production \
   -f docker-compose.yml \
   -f deploy/prod/docker-compose.override.yml \
-  up -d
+  up -d --no-deps airflow-api-server airflow-scheduler airflow-dag-processor
+
+# Reconstrua/atualize API e MCP.
+docker compose \
+  --env-file deploy/prod/.env.production \
+  -f docker-compose.yml \
+  -f deploy/prod/docker-compose.override.yml \
+  -f deploy/prod/docker-compose.traefik-host.yml \
+  --profile clipping build clipping-api clipping-mcp
+docker compose \
+  --env-file deploy/prod/.env.production \
+  -f docker-compose.yml \
+  -f deploy/prod/docker-compose.override.yml \
+  -f deploy/prod/docker-compose.traefik-host.yml \
+  --profile clipping up -d clipping-api clipping-mcp
 ```
+
+## 8. Operação do Rodou Clipping
+
+### Validação pós-subida
+
+```bash
+for path in /clipping/healthz /clipping/mcp/healthz /api/v2/monitor/health; do
+  printf '%-28s ' "$path"
+  curl -s -o /dev/null -w '%{http_code}\n' "https://SEU_HOST$path"
+done
+
+CLIPPING_API_URL=https://SEU_HOST \
+CLIPPING_API_KEY="$(cat deploy/prod/.clipping_api_key)" \
+  python services/clipping_api/scripts/smoke_test.py
+```
+
+Confira também:
+
+- `GET /clipping/v1/items` sem chave → 401; com chave → 200.
+- MCP `initialize`, `tools/list` e `list_sources`.
+- `POST /clipping/v1/runs` → 202; `GET /clipping/v1/runs?date=...` mostra
+  `queued` imediatamente e depois `success`/`partial`.
+- `GET /clipping/v1/items?date=...` retorna os itens e `sources_failed`.
+- `GET /clipping/metrics` expõe as métricas Prometheus.
+
+### Indisponibilidade do DOU
+
+- Sintoma: `502`/timeout em `www.in.gov.br` (CDN Azion), inclusive de outras
+  redes.
+- O código isola a falha, mas o DOU faz 5×5 tentativas por termo; com vários
+  termos uma execução pode durar ~30 minutos.
+- Pause a DAG para evitar execuções longas:
+  `docker exec airflow-api-server airflow dags pause rodou_clipping`.
+- Alternativa temporária: configurar `sources: [DOE:MG]` na DAG e desativar a
+  pausa; quando o DOU voltar, restaurar `[DOU, DOE:MG]`.
+- Após o retorno: `airflow dags unpause rodou_clipping` e dispare/aguarde.
+
+### Rotina de atualização
+
+1. `git pull` e rebuild dos serviços do Airflow (código embutido na imagem).
+2. Rebuild/restart de `clipping-api` e `clipping-mcp`.
+3. Reaplique `clipping/sql/init-db.sql` se o schema mudou (idempotente).
+4. Rode o smoke test e o checklist de produção.
 
 ## Observações de segurança
 

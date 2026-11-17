@@ -31,6 +31,10 @@ escopos são aplicados pela API:
 `trigger_run` aceita `reference_date`, `sources` e `idempotency_key` (default:
 `clipping:mcp:<data>`), que é repassada à API para evitar disparos duplicados.
 
+A execução só roda se a DAG estiver **desativada da pausa**. Com a DAG pausada,
+o disparo é aceito e a run aparece como `queued` em `/clipping/v1/runs`, sem
+executar até a operação desativar a pausa.
+
 ## Limites e segurança
 
 - **Contexto**: no máximo **50 itens** por chamada e `abstract` truncado em
