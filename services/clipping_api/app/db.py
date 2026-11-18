@@ -1,35 +1,180 @@
 """Acesso ao banco ``clipping`` (somente leitura + auditoria)."""
 
 import contextlib
-from datetime import date
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
+
+from .catalog import SOURCE_NAMES, SOURCES, sources_for_uf
+
+_BRT = ZoneInfo("America/Sao_Paulo")
 
 
 class DatabaseUnavailable(RuntimeError):
     """O banco não está configurado ou não respondeu."""
 
 
-def normalize_failure(failure: dict) -> dict:
+def normalize_failure(
+    failure: dict, *, reference_date: date | None = None
+) -> dict:
     """Normaliza um registro de falha de fonte para o contrato tipado."""
+    resolved_date = failure.get("date")
+    if resolved_date is None and reference_date is not None:
+        resolved_date = reference_date.isoformat()
+    elif isinstance(resolved_date, date):
+        resolved_date = resolved_date.isoformat()
+
     return {
         "source": failure.get("source") or "?",
         "code": failure.get("code") or "UPSTREAM_ERROR",
         "message": failure.get("message")
         or failure.get("error")
         or "Falha na coleta",
+        "date": resolved_date,
         "at": failure.get("at"),
     }
 
 
 def _normalize_run(row: dict) -> dict:
     row = dict(row)
+    ref_date = row.get("reference_date")
     row["sources_failed"] = [
-        normalize_failure(failure)
+        normalize_failure(failure, reference_date=ref_date)
         for failure in (row.get("sources_failed") or [])
     ]
     return row
+
+
+def _normalize_item(row: dict) -> dict:
+    row = dict(row)
+    uf = row.get("uf")
+    if isinstance(uf, str):
+        uf = uf.strip() or None
+    if uf is None:
+        uf = SOURCES.get(row.get("source") or "", {}).get("uf")
+    row["uf"] = uf
+    return row
+
+
+def summarize_runs(
+    runs: list[dict],
+    *,
+    date_from: date,
+    date_to: date,
+    first_run_date: date | None,
+    sources: list[str] | None = None,
+    enabled_sources: tuple[str, ...] = SOURCE_NAMES,
+    now_brt: datetime | None = None,
+) -> dict:
+    """Consolida ``sources_requested``, ``sources_ok`` e ``sources_failed``.
+
+    Considera apenas a execução mais recente por ``reference_date``, restringe ao
+    subconjunto de fontes consultado (quando informado) e aponta dias úteis sem
+    execução desde ``first_run_date`` como ``MISSING_RUN``.
+    """
+    target_set = set(sources) if sources is not None else set(enabled_sources)
+    requested: list[str] = []
+    ok: list[str] = []
+    failed: dict[tuple[str, str | None], dict] = {}
+    seen_dates: set[date] = set()
+
+    for run in runs:
+        ref_date = run.get("reference_date")
+        if ref_date is not None:
+            seen_dates.add(ref_date)
+
+        run_requested = list(run.get("sources_requested") or [])
+        run_ok = list(run.get("sources_ok") or [])
+        run_failed = list(run.get("sources_failed") or [])
+
+        for source in run_requested:
+            if source in target_set and source not in requested:
+                requested.append(source)
+
+        for source in run_ok:
+            if source in target_set and source not in ok:
+                ok.append(source)
+
+        recorded_failed_sources: set[str] = set()
+        for failure in run_failed:
+            normalized = normalize_failure(failure, reference_date=ref_date)
+            f_source = normalized["source"]
+            if f_source == "*":
+                expand = (
+                    list(sources)
+                    if sources is not None
+                    else [s for s in (run_requested or enabled_sources) if s in target_set]
+                )
+                for src in expand:
+                    failed.setdefault(
+                        (src, normalized["date"]),
+                        {**normalized, "source": src},
+                    )
+                    recorded_failed_sources.add(src)
+            elif f_source in target_set:
+                failed.setdefault((f_source, normalized["date"]), normalized)
+                recorded_failed_sources.add(f_source)
+
+        if run.get("status") == "failed" and ref_date is not None:
+            fallback_pool = (
+                list(sources)
+                if sources is not None
+                else (run_requested or list(enabled_sources))
+            )
+            day_iso = ref_date.isoformat()
+            for src in fallback_pool:
+                if run_requested and src not in run_requested:
+                    continue
+                if src not in run_ok and src not in recorded_failed_sources:
+                    failed.setdefault(
+                        (src, day_iso),
+                        {
+                            "source": src,
+                            "code": "UPSTREAM_ERROR",
+                            "message": "Execução falhou sem concluir esta fonte.",
+                            "date": day_iso,
+                            "at": None,
+                        },
+                    )
+
+    if first_run_date is not None:
+        current_brt = now_brt or datetime.now(_BRT)
+        max_check_date = (
+            current_brt.date() - timedelta(days=1)
+            if current_brt.hour < 6
+            else current_brt.date()
+        )
+        check_start = max(date_from, first_run_date)
+        check_end = min(date_to, max_check_date)
+        missing_sources = (
+            list(sources) if sources is not None else list(enabled_sources)
+        )
+        cur_day = check_start
+        while cur_day <= check_end:
+            if cur_day.weekday() < 5 and cur_day not in seen_dates:
+                day_iso = cur_day.isoformat()
+                for src in missing_sources:
+                    failed.setdefault(
+                        (src, day_iso),
+                        {
+                            "source": src,
+                            "code": "MISSING_RUN",
+                            "message": (
+                                f"Sem execução registrada para o dia útil {day_iso}."
+                            ),
+                            "date": day_iso,
+                            "at": None,
+                        },
+                    )
+            cur_day += timedelta(days=1)
+
+    return {
+        "sources_requested": requested,
+        "sources_ok": ok,
+        "sources_failed": list(failed.values()),
+    }
 
 
 class Database:
@@ -113,11 +258,18 @@ class Database:
         if date_to is not None:
             where.append("published_date <= %(date_to)s")
             params["date_to"] = date_to
-        if sources:
+        if sources is not None:
             where.append("source = ANY(%(sources)s)")
             params["sources"] = list(sources)
         if uf:
-            where.append("uf = %(uf)s")
+            uf_sources = sources_for_uf(uf)
+            if uf_sources:
+                where.append(
+                    "(uf = %(uf)s OR (uf IS NULL AND source = ANY(%(uf_sources)s)))"
+                )
+                params["uf_sources"] = uf_sources
+            else:
+                where.append("uf = %(uf)s")
             params["uf"] = uf
         if q:
             where.append(
@@ -192,7 +344,7 @@ class Database:
                 """,
                 page_params,
             )
-            rows = [dict(row) for row in db_cursor.fetchall()]
+            rows = [_normalize_item(row) for row in db_cursor.fetchall()]
 
         has_more = len(rows) > limit
         return rows[:limit], int(total), has_more
@@ -210,7 +362,7 @@ class Database:
                 (item_id,),
             )
             row = cursor.fetchone()
-            return dict(row) if row else None
+            return _normalize_item(row) if row else None
 
     # ------------------------------------------------------------------
     # Execuções
@@ -252,40 +404,42 @@ class Database:
             row = cursor.fetchone()
             return _normalize_run(row) if row else None
 
-    def runs_summary(self, *, date_from, date_to) -> dict:
+    def runs_summary(
+        self,
+        *,
+        date_from,
+        date_to,
+        sources: list[str] | None = None,
+        enabled_sources: tuple[str, ...] = SOURCE_NAMES,
+    ) -> dict:
         with self._cursor() as cursor:
             cursor.execute(
+                "SELECT MIN(reference_date) AS first_date FROM clipping.run"
+            )
+            first_row = cursor.fetchone()
+            first_run_date = first_row["first_date"] if first_row else None
+
+            cursor.execute(
                 """
-                SELECT sources_requested, sources_ok, sources_failed
+                SELECT DISTINCT ON (reference_date)
+                       reference_date, status, sources_requested, sources_ok,
+                       sources_failed
                   FROM clipping.run
                  WHERE reference_date BETWEEN %s AND %s
-                 ORDER BY started_at DESC
-                 LIMIT 50
+                 ORDER BY reference_date, started_at DESC
                 """,
                 (date_from, date_to),
             )
             runs = [dict(row) for row in cursor.fetchall()]
 
-        requested: list[str] = []
-        ok: list[str] = []
-        failed: dict[str, dict] = {}
-
-        for run in runs:
-            for source in run.get("sources_requested") or []:
-                if source not in requested:
-                    requested.append(source)
-            for source in run.get("sources_ok") or []:
-                if source not in ok:
-                    ok.append(source)
-            for failure in run.get("sources_failed") or []:
-                normalized = normalize_failure(failure)
-                failed.setdefault(normalized["source"], normalized)
-
-        return {
-            "sources_requested": requested,
-            "sources_ok": ok,
-            "sources_failed": list(failed.values()),
-        }
+        return summarize_runs(
+            runs,
+            date_from=date_from,
+            date_to=date_to,
+            first_run_date=first_run_date,
+            sources=sources,
+            enabled_sources=enabled_sources,
+        )
 
     def source_statuses(self) -> dict[str, dict]:
         with self._cursor() as cursor:

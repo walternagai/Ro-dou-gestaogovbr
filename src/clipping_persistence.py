@@ -24,6 +24,8 @@ RUN_SUCCESS = "success"
 RUN_PARTIAL = "partial"
 RUN_FAILED = "failed"
 
+_SOURCE_UFS = {"DOE:MG": "MG", "DOE:SP": "SP"}
+
 # Colunas de `clipping.item` são passadas como parâmetros nomeados nos
 # comandos SQL abaixo.
 
@@ -82,6 +84,7 @@ ITEM_UPSERT = """
         %(updated_at)s
     )
     ON CONFLICT (id) DO UPDATE SET
+        uf = EXCLUDED.uf,
         abstract = EXCLUDED.abstract,
         title = EXCLUDED.title,
         url = EXCLUDED.url,
@@ -183,7 +186,7 @@ def build_item_rows(search_results, reference_date: date) -> list[dict]:
                 for department, items in (departments or {}).items():
                     for item in items or []:
                         source = item.get("source") or "UNKNOWN"
-                        uf = item.get("uf")
+                        uf = item.get("uf") or _SOURCE_UFS.get(source)
                         url = item.get("href") or item.get("url") or ""
                         external_id = external_id_for(item)
                         title = item.get("title") or ""

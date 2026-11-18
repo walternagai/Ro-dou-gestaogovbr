@@ -42,9 +42,9 @@ GET /clipping/v1/items?date=2026-11-16&source=DOU,DOE:MG&q=licitação&page=1&si
 | Parâmetro | Descrição |
 |---|---|
 | `date` | dia de publicação (`AAAA-MM-DD`); mutuamente exclusivo com `from`/`to` |
-| `from` / `to` | intervalo (máximo de 31 dias) |
-| `source` | fontes separadas por vírgula (`DOU`, `QD`, `INLABS`, `DOE:SP`, `DOE:MG`) |
-| `uf` | sigla suportada (`MG`, `SP`) |
+| `from` / `to` | intervalo (máximo de 31 dias corridos, pontas incluídas) |
+| `source` | fontes habilitadas separadas por vírgula (ex.: `DOU,DOE:MG`; configurável via `CLIPPING_ENABLED_SOURCES`) |
+| `uf` | sigla suportada entre as fontes habilitadas (ex.: `MG`, `SP`) |
 | `q` | busca textual (`plainto_tsquery('portuguese')`) em `title` e `abstract`; mínimo 2 caracteres; termos em `AND` |
 | `since` | timestamp ISO-8601 (`date-time`) para delta por `updated_at` |
 | `page` / `size` | paginação por página (`size` de 1 a 200; default 50) |
@@ -94,8 +94,11 @@ GET /clipping/v1/items?date=2026-11-16&source=DOU,DOE:MG&q=licitação&page=1&si
 - `id` é determinístico (`sha256(source|uf|external_id)`) e estável entre
   reexecuções; `content_hash` permite deduplicar atos idênticos entre fontes
   diferentes (`DOU`, `QD`, `INLABS`).
-- `partial` indica se alguma fonte falhou na janela consultada; `total` reflete
-  apenas os itens das fontes que responderam.
+- `partial` indica se alguma fonte **incluída no filtro consultado** falhou
+  ou ficou sem execução registrada em dia útil na janela `from`/`to`; `total`
+  reflete apenas os itens das fontes que responderam. Cada item de
+  `sources_failed` traz `source`, `code` (ex.: `UPSTREAM_ERROR`, `MISSING_RUN`),
+  `message`, `date` (dia de referência afetado) e `at`.
 - As respostas de `/items`, `/runs` e `/sources` trazem `ETag`. Reenvie-o em
   `If-None-Match` para receber `304` sem corpo quando nada mudou; o
   `Cache-Control` é curto (`private, max-age=60`).

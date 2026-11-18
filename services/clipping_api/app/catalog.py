@@ -50,12 +50,44 @@ SUPPORTED_UFS = tuple(
 )
 
 
-def validate_sources(sources: list[str]) -> list[str]:
+def sources_for_uf(
+    uf: str, allowed_sources: tuple[str, ...] | list[str] | None = None
+) -> list[str]:
+    """Retorna as fontes associadas à UF informada."""
+    pool = allowed_sources if allowed_sources is not None else SOURCE_NAMES
+    return [
+        source
+        for source in pool
+        if source in SOURCES and SOURCES[source].get("uf") == uf
+    ]
+
+
+def enabled_ufs(
+    allowed_sources: tuple[str, ...] | list[str] | None = None,
+) -> tuple[str, ...]:
+    """Retorna as UFs atendidas pelo subconjunto de fontes habilitadas."""
+    pool = allowed_sources if allowed_sources is not None else SOURCE_NAMES
+    return tuple(
+        sorted(
+            {
+                SOURCES[source]["uf"]
+                for source in pool
+                if source in SOURCES and SOURCES[source].get("uf")
+            }
+        )
+    )
+
+
+def validate_sources(
+    sources: list[str],
+    allowed_sources: tuple[str, ...] | list[str] | None = None,
+) -> list[str]:
     """Valida e normaliza a lista de fontes informada na query/body."""
-    invalid = [source for source in sources if source not in SOURCES]
+    pool = tuple(allowed_sources) if allowed_sources is not None else SOURCE_NAMES
+    invalid = [source for source in sources if source not in pool]
     if invalid:
         raise ValueError(
             f"Fonte(s) inválida(s): {', '.join(invalid)}. "
-            f"Valores aceitos: {', '.join(SOURCE_NAMES)}."
+            f"Valores aceitos: {', '.join(pool)}."
         )
     return sources

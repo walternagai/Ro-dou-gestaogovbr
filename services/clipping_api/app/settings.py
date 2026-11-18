@@ -3,6 +3,8 @@
 import os
 from dataclasses import dataclass
 
+from .catalog import SOURCE_NAMES, validate_sources
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -15,6 +17,7 @@ class Settings:
     cache_max_age_seconds: int
     expose_docs: bool
     stale_after_hours: int
+    enabled_sources: tuple[str, ...]
 
     @property
     def trigger_enabled(self) -> bool:
@@ -35,6 +38,16 @@ def _bool_env(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _sources_env(name: str) -> tuple[str, ...]:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return SOURCE_NAMES
+    parsed = [item.strip() for item in raw.split(",") if item.strip()]
+    if not parsed:
+        return SOURCE_NAMES
+    return tuple(validate_sources(parsed))
+
+
 def get_settings() -> Settings:
     return Settings(
         db_url=os.getenv("CLIPPING_DB_URL", ""),
@@ -48,4 +61,5 @@ def get_settings() -> Settings:
         cache_max_age_seconds=_int_env("CLIPPING_CACHE_MAX_AGE", 60),
         expose_docs=_bool_env("CLIPPING_EXPOSE_DOCS", True),
         stale_after_hours=_int_env("CLIPPING_STALE_AFTER_HOURS", 26),
+        enabled_sources=_sources_env("CLIPPING_ENABLED_SOURCES"),
     )

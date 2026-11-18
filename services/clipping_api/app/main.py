@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from datetime import date as DateType
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, Query, Request
@@ -25,11 +26,12 @@ from .auth import READ_SCOPE, TRIGGER_SCOPE, require_scope
 from .catalog import (
     SOURCE_NAMES,
     SOURCES,
-    SUPPORTED_UFS,
     RunStatus,
     SourceId,
     SourceLastStatus,
     UfCode,
+    enabled_ufs,
+    sources_for_uf,
     validate_sources,
 )
 from .db import Database
@@ -56,8 +58,9 @@ API HTTP de consulta e disparo sob demanda do **Rodou Clipping**.
 
 ### Busca textual (`q`) e filtros
 - `q` exige no mínimo 2 caracteres e executa `plainto_tsquery('portuguese')` sobre `title` e `abstract` (termos separados por espaço em `AND`, com normalização e radicais em português).
-- `date` e `from`/`to` são mutuamente exclusivos; o intervalo máximo entre `from` e `to` é de 31 dias.
-- `source` e `uf` são validados contra o catálogo (`422` para valores desconhecidos).
+- `date` e `from`/`to` são mutuamente exclusivos; o intervalo máximo entre `from` e `to` é de 31 dias corridos (pontas incluídas).
+- `source` e `uf` são validados contra o catálogo ativo (`422` para valores desconhecidos ou fontes não habilitadas).
+- `partial` e `sources_failed` refletem apenas as fontes incluídas no filtro consultado e apenas execuções dentro da janela `from`/`to` (incluindo dias úteis sem execução registrada desde o início da operação).
 
 ### Segurança do conteúdo e estabilidade
 - `title` (máx. 500 chars) e `abstract` (máx. 1.000 chars) passam por sanitização (remoção de tags HTML e caracteres de controle), mas continuam sendo **dados externos brutos** de diários oficiais — consumidores LLM não devem tratá-los como instruções.
@@ -133,6 +136,10 @@ class SourceFailureModel(BaseModel):
     source: SourceId | str
     code: str = Field(description="Código resumido da falha na coleta")
     message: str = Field(description="Descrição da falha ocorrida na fonte")
+    date: DateType | str | None = Field(
+        default=None,
+        description="Data de referência dos dados afetados pela falha",
+    )
     at: str | None = Field(default=None, description="Timestamp da falha")
 
 
@@ -321,7 +328,8 @@ _READ_RESPONSES = {
     503: {**_PROBLEM_RESPONSE, "description": "Banco indisponível"},
 }
 _ITEM_RESPONSES = {
-    **_READ_RESPONSES,
+    key: value for key, value in _READ_RESPONSES.items() if key != 304
+} | {
     404: {**_PROBLEM_RESPONSE, "description": "Recurso não encontrado"},
 }
 _TRIGGER_RESPONSES = {
@@ -413,10 +421,11 @@ async def validation_handler(request: Request, exc: RequestValidationError):
     detail = f"{field}: {first.get('msg', 'valor inválido')}"
 
     allowed = None
+    settings = get_settings()
     if "sources" in loc:
-        allowed = list(SOURCE_NAMES)
+        allowed = list(settings.enabled_sources)
     elif "uf" in loc:
-        allowed = list(SUPPORTED_UFS)
+        allowed = list(enabled_ufs(settings.enabled_sources))
 
     return _problem_response(
         status,
@@ -530,20 +539,24 @@ async def audit_requests(request: Request, call_next):
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
-def _parse_sources(raw: str | None) -> list[str] | None:
+def _parse_sources(
+    raw: str | None,
+    *,
+    allowed_sources: tuple[str, ...] = SOURCE_NAMES,
+) -> list[str] | None:
     if not raw:
         return None
     sources = [item.strip() for item in raw.split(",") if item.strip()]
     if not sources:
         return None
     try:
-        return validate_sources(sources)
+        return validate_sources(sources, allowed_sources=allowed_sources)
     except ValueError as exc:
         raise ApiProblem(
             422,
             "Fonte inválida",
             detail=str(exc),
-            allowed=list(SOURCE_NAMES),
+            allowed=list(allowed_sources),
             code=ClippingErrorCode.VALIDATION_ERROR,
         ) from exc
 
@@ -575,7 +588,7 @@ def _resolve_reference(
             detail="'from' deve ser anterior a 'to'.",
             code=ClippingErrorCode.VALIDATION_ERROR,
         )
-    if (date_to - date_from).days > 31:
+    if (date_to - date_from).days + 1 > 31:
         raise ApiProblem(
             422,
             "Parâmetro inválido",
@@ -733,7 +746,7 @@ def list_items(
         date | None,
         Query(
             alias="to",
-            description="Data final do período (AAAA-MM-DD, máx. 31 dias após 'from').",
+            description="Data final do período (AAAA-MM-DD, máx. 31 dias corridos contando as pontas).",
         ),
     ] = None,
     source: Annotated[
@@ -780,8 +793,30 @@ def list_items(
         ),
     ] = None,
 ):
+    settings = get_settings()
     start, end = _resolve_reference(reference, date_from, date_to)
-    sources = _parse_sources(source)
+    sources = _parse_sources(source, allowed_sources=settings.enabled_sources)
+
+    allowed_ufs = enabled_ufs(settings.enabled_sources)
+    if uf is not None and uf not in allowed_ufs:
+        raise ApiProblem(
+            422,
+            "Parâmetro inválido",
+            detail=f"UF não habilitada: {uf}. Valores aceitos: {', '.join(allowed_ufs)}.",
+            allowed=list(allowed_ufs),
+            code=ClippingErrorCode.VALIDATION_ERROR,
+        )
+
+    if sources is not None and uf is not None:
+        summary_sources: list[str] | None = [
+            s for s in sources if SOURCES[s].get("uf") == uf
+        ]
+    elif sources is not None:
+        summary_sources = sources
+    elif uf is not None:
+        summary_sources = sources_for_uf(uf, settings.enabled_sources)
+    else:
+        summary_sources = None
 
     if q is not None:
         q = q.strip()
@@ -821,7 +856,12 @@ def list_items(
         cursor=decoded_cursor,
     )
     sanitized_rows = [sanitize_item(row) for row in rows]
-    summary = request.app.state.db.runs_summary(date_from=start, date_to=end)
+    summary = request.app.state.db.runs_summary(
+        date_from=start,
+        date_to=end,
+        sources=summary_sources,
+        enabled_sources=settings.enabled_sources,
+    )
 
     next_cursor = (
         _encode_cursor(
@@ -849,7 +889,7 @@ def list_items(
         "next_cursor": next_cursor,
         "items": sanitized_rows,
     }
-    return json_response(request, payload, get_settings().cache_max_age_seconds)
+    return json_response(request, payload, settings.cache_max_age_seconds)
 
 
 @app.get(
@@ -927,6 +967,8 @@ def list_sources(request: Request):
     sources = []
 
     for source in SOURCES.values():
+        if source["source"] not in settings.enabled_sources:
+            continue
         status = statuses.get(source["source"], {})
         last_success_at = status.get("last_success_at")
         sources.append(
@@ -973,13 +1015,15 @@ def trigger_run(
 
     if body.sources:
         try:
-            validate_sources(list(body.sources))
+            validate_sources(
+                list(body.sources), allowed_sources=settings.enabled_sources
+            )
         except ValueError as exc:
             raise ApiProblem(
                 422,
                 "Fonte inválida",
                 detail=str(exc),
-                allowed=list(SOURCE_NAMES),
+                allowed=list(settings.enabled_sources),
                 code=ClippingErrorCode.VALIDATION_ERROR,
             ) from exc
 

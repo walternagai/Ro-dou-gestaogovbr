@@ -2,7 +2,14 @@
 
 import pytest
 from app.auth import RateLimiter, hash_key
-from app.catalog import SOURCES, SUPPORTED_UFS, validate_sources
+from app.catalog import (
+    SOURCES,
+    SUPPORTED_UFS,
+    enabled_ufs,
+    sources_for_uf,
+    validate_sources,
+)
+from app.db import summarize_runs
 from app.sanitize import sanitize_item, sanitize_text
 
 
@@ -33,12 +40,39 @@ def test_rate_limiter_window():
 def test_validate_sources():
     assert validate_sources(["DOU", "DOE:MG"]) == ["DOU", "DOE:MG"]
     assert SUPPORTED_UFS == ("MG", "SP")
+    assert enabled_ufs(("DOU", "DOE:MG")) == ("MG",)
+    assert sources_for_uf("MG", ("DOU", "DOE:MG")) == ["DOE:MG"]
 
     with pytest.raises(ValueError) as excinfo:
         validate_sources(["XPTO"])
 
     assert "XPTO" in str(excinfo.value)
     assert "DOE:MG" in str(excinfo.value)
+
+
+def test_summarize_runs_scopes_sources_and_latest_run():
+    from datetime import date, datetime
+    from zoneinfo import ZoneInfo
+
+    summary = summarize_runs(
+        [
+            {
+                "reference_date": date(2026, 11, 16),
+                "status": "success",
+                "sources_requested": ["DOU", "DOE:MG"],
+                "sources_ok": ["DOU", "DOE:MG"],
+                "sources_failed": [],
+            }
+        ],
+        date_from=date(2026, 11, 16),
+        date_to=date(2026, 11, 16),
+        first_run_date=date(2026, 11, 16),
+        sources=["DOE:MG"],
+        enabled_sources=("DOU", "DOE:MG"),
+        now_brt=datetime(2026, 11, 16, 10, 0, tzinfo=ZoneInfo("America/Sao_Paulo")),
+    )
+    assert summary["sources_requested"] == ["DOE:MG"]
+    assert summary["sources_failed"] == []
 
 
 def test_sanitize_text_and_item():

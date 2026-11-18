@@ -83,18 +83,38 @@ def test_invalid_api_key_is_forbidden(api):
 
 
 def test_items_filters_partial_reference_and_content_hash(api):
-    client, _ = api
-    response = client.get(
+    client, database = api
+    # RC-01: item estadual com uf=None no banco ainda casa com uf=MG e sai normalizado
+    database.items.append(
+        make_item(
+            item_id="item-mg-null-uf",
+            source="DOE:MG",
+            uf=None,
+            title="Portaria MG legada",
+        )
+    )
+
+    # RC-02: filtrar source=DOE:MG não herda falha de QD (partial deve ser False)
+    filtered = client.get(
         "/clipping/v1/items",
         params={"date": "2026-11-14", "source": "DOE:MG", "uf": "mg"},
         headers=_headers(),
     )
+    assert filtered.status_code == 200
+    f_payload = filtered.json()
+    assert f_payload["total"] == 2
+    assert all(it["uf"] == "MG" for it in f_payload["items"])
+    assert f_payload["partial"] is False
+    assert f_payload["sources_failed"] == []
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["total"] == 1
-    assert payload["items"][0]["id"] == "item-2"
-    assert payload["items"][0]["content_hash"] == "hash-item-2"
+    # Sem filtro de fonte, a falha de QD aparece com a data afetada
+    unfiltered = client.get(
+        "/clipping/v1/items",
+        params={"date": "2026-11-14"},
+        headers=_headers(),
+    )
+    assert unfiltered.status_code == 200
+    payload = unfiltered.json()
     assert payload["reference"] == {
         "from": "2026-11-14",
         "to": "2026-11-14",
@@ -106,6 +126,83 @@ def test_items_filters_partial_reference_and_content_hash(api):
     assert payload["sources_failed"][0]["source"] == "QD"
     assert payload["sources_failed"][0]["code"] == "UPSTREAM_ERROR"
     assert payload["sources_failed"][0]["message"] == "HTTP 503"
+    assert payload["sources_failed"][0]["date"] == "2026-11-14"
+
+
+def test_missing_weekday_and_disjoint_filters_and_31_days_window(api):
+    client, database = api
+    from .fake_db import make_run
+
+    # RC-05: 31 dias corridos (pontas incluídas) passa; 32 dias falha com 422
+    ok_31 = client.get(
+        "/clipping/v1/items",
+        params={"from": "2026-10-01", "to": "2026-10-31"},
+        headers=_headers(),
+    )
+    assert ok_31.status_code == 200
+
+    fail_32 = client.get(
+        "/clipping/v1/items",
+        params={"from": "2026-10-01", "to": "2026-11-01"},
+        headers=_headers(),
+    )
+    assert fail_32.status_code == 422
+
+    # RC-02: combinação disjunta (DOU + MG) não gera falha falsa
+    disjoint = client.get(
+        "/clipping/v1/items",
+        params={"date": "2026-11-14", "source": "DOU", "uf": "MG"},
+        headers=_headers(),
+    )
+    assert disjoint.status_code == 200
+    assert disjoint.json()["total"] == 0
+    assert disjoint.json()["partial"] is False
+    assert disjoint.json()["sources_failed"] == []
+
+    # RC-03: dia útil (2026-11-16, segunda) sem run entre runs existentes gera MISSING_RUN
+    database.runs.append(
+        make_run(
+            run_id="dag_test:run-17",
+            reference_date=date(2026, 11, 17),
+            started_at=datetime(2026, 11, 17, 5, 0),
+        )
+    )
+    gap = client.get(
+        "/clipping/v1/items",
+        params={"from": "2026-11-16", "to": "2026-11-17", "source": "DOU"},
+        headers=_headers(),
+    )
+    assert gap.status_code == 200
+    g_body = gap.json()
+    assert g_body["partial"] is True
+    assert g_body["sources_failed"][0]["source"] == "DOU"
+    assert g_body["sources_failed"][0]["code"] == "MISSING_RUN"
+    assert g_body["sources_failed"][0]["date"] == "2026-11-16"
+
+
+def test_enabled_sources_filter_hides_inactive_sources(api, monkeypatch):
+    client, _ = api
+    monkeypatch.setenv("CLIPPING_ENABLED_SOURCES", "DOU,DOE:MG")
+
+    sources = client.get("/clipping/v1/sources", headers=_headers())
+    assert sources.status_code == 200
+    assert [s["source"] for s in sources.json()["sources"]] == ["DOU", "DOE:MG"]
+
+    disabled_src = client.get(
+        "/clipping/v1/items",
+        params={"date": "2026-11-14", "source": "QD"},
+        headers=_headers(),
+    )
+    assert disabled_src.status_code == 422
+    assert disabled_src.json()["allowed"] == ["DOU", "DOE:MG"]
+
+    disabled_uf = client.get(
+        "/clipping/v1/items",
+        params={"date": "2026-11-14", "uf": "SP"},
+        headers=_headers(),
+    )
+    assert disabled_uf.status_code == 422
+    assert disabled_uf.json()["allowed"] == ["MG"]
 
 
 def test_items_page_and_cursor_pagination(api):

@@ -138,6 +138,7 @@ services:
       AIRFLOW_API_URL: "http://airflow-api-server:8080"
       AIRFLOW_API_TOKEN: "${AIRFLOW_API_TOKEN:-}"
       CLIPPING_DAG_ID: "${CLIPPING_DAG_ID:-rodou_clipping}"
+      CLIPPING_ENABLED_SOURCES: "${CLIPPING_ENABLED_SOURCES:-}"
     ports: !override []
     networks:
       - default

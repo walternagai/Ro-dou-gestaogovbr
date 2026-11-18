@@ -2,7 +2,8 @@
 
 from datetime import date, datetime
 
-from app.db import normalize_failure
+from app.catalog import SOURCE_NAMES, sources_for_uf
+from app.db import _normalize_item, normalize_failure, summarize_runs
 
 
 class FakeDB:
@@ -40,6 +41,7 @@ class FakeDB:
         offset=0,
         cursor=None,
     ):
+        uf_sources = set(sources_for_uf(uf)) if uf else set()
         rows = []
         for item in self.items:
             if date is not None and item["published_date"] != date:
@@ -48,10 +50,14 @@ class FakeDB:
                 continue
             if date_to is not None and item["published_date"] > date_to:
                 continue
-            if sources and item["source"] not in sources:
+            if sources is not None and item["source"] not in sources:
                 continue
-            if uf and item.get("uf") != uf:
-                continue
+            if uf:
+                item_uf = item.get("uf")
+                if item_uf != uf and not (
+                    item_uf is None and item.get("source") in uf_sources
+                ):
+                    continue
             if q:
                 haystack = (
                     f"{item.get('title') or ''} {item.get('abstract') or ''}".casefold()
@@ -60,7 +66,7 @@ class FakeDB:
                     continue
             if since is not None and not (item["updated_at"] > since):
                 continue
-            rows.append(item)
+            rows.append(_normalize_item(item))
 
         rows.sort(key=lambda row: row["id"])
         rows.sort(key=lambda row: row["published_date"], reverse=True)
@@ -82,7 +88,8 @@ class FakeDB:
         return sliced[:limit], total, has_more
 
     def get_item(self, item_id: str):
-        return next((item for item in self.items if item["id"] == item_id), None)
+        item = next((item for item in self.items if item["id"] == item_id), None)
+        return _normalize_item(item) if item else None
 
     # ------------------------------------------------------------------
     def list_runs(self, *, date=None, limit=50):
@@ -90,7 +97,8 @@ class FakeDB:
             {
                 **run,
                 "sources_failed": [
-                    normalize_failure(f) for f in (run.get("sources_failed") or [])
+                    normalize_failure(f, reference_date=run.get("reference_date"))
+                    for f in (run.get("sources_failed") or [])
                 ],
             }
             for run in self.runs
@@ -106,34 +114,39 @@ class FakeDB:
         return {
             **run,
             "sources_failed": [
-                normalize_failure(f) for f in (run.get("sources_failed") or [])
+                normalize_failure(f, reference_date=run.get("reference_date"))
+                for f in (run.get("sources_failed") or [])
             ],
         }
 
-    def runs_summary(self, *, date_from, date_to):
-        runs = [
-            run
-            for run in self.runs
-            if date_from <= run["reference_date"] <= date_to
-        ]
-        requested, ok, failed = [], [], {}
+    def runs_summary(
+        self,
+        *,
+        date_from,
+        date_to,
+        sources=None,
+        enabled_sources=SOURCE_NAMES,
+    ):
+        first_run_date = min(
+            (run["reference_date"] for run in self.runs),
+            default=None,
+        )
+        latest_by_date: dict[date, dict] = {}
+        for run in sorted(
+            self.runs, key=lambda entry: entry["started_at"], reverse=True
+        ):
+            ref_date = run["reference_date"]
+            if date_from <= ref_date <= date_to:
+                latest_by_date.setdefault(ref_date, run)
 
-        for run in runs:
-            for source in run.get("sources_requested") or []:
-                if source not in requested:
-                    requested.append(source)
-            for source in run.get("sources_ok") or []:
-                if source not in ok:
-                    ok.append(source)
-            for failure in run.get("sources_failed") or []:
-                normalized = normalize_failure(failure)
-                failed.setdefault(normalized["source"], normalized)
-
-        return {
-            "sources_requested": requested,
-            "sources_ok": ok,
-            "sources_failed": list(failed.values()),
-        }
+        return summarize_runs(
+            list(latest_by_date.values()),
+            date_from=date_from,
+            date_to=date_to,
+            first_run_date=first_run_date,
+            sources=sources,
+            enabled_sources=enabled_sources,
+        )
 
     def source_statuses(self):
         latest: dict[str, dict] = {}

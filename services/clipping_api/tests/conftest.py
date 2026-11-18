@@ -61,6 +61,7 @@ def api():
             sources_failed=(
                 {"source": "QD", "error": "HTTP 503", "at": "2026-11-14T05:10:00-03:00"},
             ),
+            started_at=datetime(2026, 11, 14, 5, 1),
         ),
     ]
     database.source_runs = [

@@ -118,7 +118,17 @@ def test_build_item_rows_keeps_same_content_from_different_sources():
     )
 
     assert len(rows) == 2
-    assert {row["source"] for row in rows} == {"DOU", "DOE:SP"}
+    by_source = {row["source"]: row for row in rows}
+    assert set(by_source) == {"DOU", "DOE:SP"}
+    assert by_source["DOU"]["uf"] is None
+    assert by_source["DOE:SP"]["uf"] == "SP"
+
+
+def test_build_item_rows_fills_uf_for_state_sources():
+    rows = build_item_rows(
+        [_search_result(items=[_item(source="DOE:MG")])], REFERENCE_DATE
+    )
+    assert rows[0]["uf"] == "MG"
 
 
 def test_build_item_rows_skips_missing_search():
